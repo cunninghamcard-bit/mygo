@@ -872,12 +872,14 @@ func (rt *engine) keyDownPhysical(mods Modifiers, key, physical Key, repeat bool
 		return false
 	}
 	if (key == KeyEnter || key == KeySpace) && mods == 0 {
-		// A focused button or link takes them before the window's
-		// shortcuts, such as a dialog's default button; a toggle takes
-		// Space before them, and Enter after.
+		// A focused button takes them before the window's shortcuts,
+		// such as a dialog's default button; a toggle takes Space before
+		// them, and Enter after. A link takes Enter alone, as on the web,
+		// and leaves Space to scroll.
 		s := rt.states[rt.focused]
 		window := s != nil && key == KeyEnter && s.flags&flagToggle != 0
-		if s != nil && !rt.claimedBy(k, window) && s.flags&flagClickable != 0 && s.flags&flagDisabled == 0 {
+		link := s != nil && key == KeySpace && s.role == RoleLink
+		if s != nil && !link && !rt.claimedBy(k, window) && s.flags&flagClickable != 0 && s.flags&flagDisabled == 0 {
 			s.click(0)
 			rt.focusVisible = true
 			rt.requestFrame()

@@ -381,6 +381,46 @@ func TestKeyboardScrolling(t *testing.T) {
 	}
 }
 
+// TestLinkTakesEnterNotSpace follows a focused link on Enter alone, as the
+// web does, leaving Space to scroll what the link is in; a button takes both.
+func TestLinkTakesEnterNotSpace(t *testing.T) {
+	clicks := map[string]int{}
+	var scroll *node
+	tt := coreNewTester(func(c *context) {
+		scroll = coreScroll(c).Height(100).Children(func() {
+			for _, e := range []*node{coreLink(c, "Docs", ""), coreButton(c, "Help").Role(RoleLink), coreButton(c, "Save")} {
+				if e.Clicked() {
+					clicks[e.innerText()]++
+				}
+			}
+			coreBox(c).Height(1000)
+		})
+	}, 300, 200)
+	for _, label := range []string{"Docs", "Help"} {
+		tt.Key(0, KeyTab)
+		if !tt.Focused(label) {
+			t.Fatalf("Tab does not focus %s", label)
+		}
+		y := scroll.st.scrollY
+		tt.Key(0, KeySpace)
+		if clicks[label] != 0 {
+			t.Errorf("Space followed the link %s", label)
+		}
+		if scroll.st.scrollY <= y {
+			t.Errorf("Space on the link %s left the scroll at %v", label, scroll.st.scrollY)
+		}
+		tt.Key(0, KeyEnter)
+		if clicks[label] != 1 {
+			t.Errorf("Enter followed the link %s %d times", label, clicks[label])
+		}
+	}
+	tt.Key(0, KeyTab)
+	tt.Key(0, KeySpace)
+	if clicks["Save"] != 1 {
+		t.Errorf("Space clicked the button %d times", clicks["Save"])
+	}
+}
+
 // TestElementsGoneInARebuild forgets the elements a frame built, then left
 // out when it built again: a field that comes back is new, and takes the
 // focus with AutoFocus again.
