@@ -238,7 +238,10 @@ type transition struct {
 	target, next, shown tbox
 	ch                  [8]channel
 	moving              uint8
-	fresh               bool
+	// entering is the components of moving that the Enter set going, not
+	// a move of the layout: what an AttachTo panel adds to its place.
+	entering uint8
+	fresh    bool
 	// held keeps the element appearing unseen while copies of its
 	// siblings leave (AfterExits), and focus the keyboard focus given to
 	// it meanwhile, which it takes as it shows.
@@ -366,7 +369,7 @@ func (r *transition) rest(b tbox, now time.Time) {
 	for i, v := range b.vals() {
 		r.ch[i] = channel{value: float64(v), target: float64(v), at: now}
 	}
-	r.moving, r.collapse = 0, 0
+	r.moving, r.entering, r.collapse = 0, 0, 0
 }
 
 // sample moves the channels to now, and returns where they show the
@@ -389,6 +392,7 @@ func (r *transition) sample(target tbox, now time.Time) tbox {
 		v[i] = float32(ch.value)
 	}
 	r.moving &^= still
+	r.entering &= r.moving
 	if r.moving == 0 {
 		r.collapse = 0
 		return target
@@ -577,6 +581,7 @@ func (rt *engine) animateLayout(root *node, w, h float32) {
 			}
 			if changed != 0 {
 				r.head(next, changed, now)
+				r.entering &^= changed
 			}
 		}
 		r.target, r.laid = next, rt.frame
@@ -629,6 +634,7 @@ func (r *transition) enter(e *node, next tbox, still bool, now time.Time) {
 	r.rest(next.moved(m, axis, still), now)
 	r.collapse = axis
 	r.head(next, moveAll, now)
+	r.entering = moveAll
 }
 
 // show shows e where r's channels have it now, on its way to r.target.

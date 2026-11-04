@@ -193,3 +193,31 @@ func TestAttachedPanelEntersWithTravel(t *testing.T) {
 		})
 	}
 }
+
+// TestAttachedPanelStaysOnMovingAnchor checks that a panel with an Enter
+// transition stays on its anchor as the anchor moves, once it has come in:
+// a move of the layout is not part of the Enter's travel.
+func TestAttachedPanelStaysOnMovingAnchor(t *testing.T) {
+	enter := ElementTransition{Duration: time.Second, Ease: Linear, Enter: &Motion{X: 20, Y: 20}}
+	var open bool
+	shift := float32(50)
+	tt, now := clockTester(func(c *context) {
+		coreBox(c).Fill().Children(func() {
+			a := coreBox(c).Width(40).Height(20).Margin(0, 0, 0, shift).Label("anchor")
+			corePopoverBase(c, a, &open, func(p *node) {
+				p.Width(60).Height(60).Label("panel").Transition(enter)
+			})
+		})
+	}, 300, 200)
+	tick := ticker(tt, now)
+	open = true
+	tt.Frame()
+	tick(2 * time.Second)
+	gap := at(t, tt, "panel").X - at(t, tt, "anchor").X
+	shift = 150
+	tt.Frame()
+	tick(100 * time.Millisecond)
+	if d := at(t, tt, "panel").X - at(t, tt, "anchor").X; d != gap {
+		t.Errorf("anchor moved: panel is %v from it, want %v", d, gap)
+	}
+}

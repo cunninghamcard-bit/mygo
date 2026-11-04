@@ -1294,7 +1294,7 @@ func reattach(ov *node) {
 			continue
 		}
 		c.x, c.y = attachedAt(c, ov, laidOutVisualBox(c.popover), pw, ph, c.w, c.h)
-		if r := ov.c.rt.trans[c.id]; r != nil && r.moving&movePos != 0 {
+		if r := ov.c.rt.trans[c.id]; r != nil && r.entering&movePos != 0 {
 			c.x += r.shown.x - r.target.x
 			c.y += r.shown.y - r.target.y
 		}
