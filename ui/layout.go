@@ -291,6 +291,9 @@ func (e *node) resolvedText() textStyle {
 		if take&setSelection != 0 {
 			out.selection = t.selection
 		}
+		if take&setCaret != 0 {
+			out.caret = t.caret
+		}
 		out.set |= take
 	}
 	return out

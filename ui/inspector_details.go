@@ -421,6 +421,9 @@ func textStyles(ts *textStyle, set uint32) []inspDecl {
 	if set&setSelection != 0 {
 		ds = append(ds, inspDecl{name: "selection-color", value: colorText(ts.selection), color: ts.selection, swatch: true})
 	}
+	if set&setCaret != 0 {
+		ds = append(ds, inspDecl{name: "caret-color", value: colorText(ts.caret), color: ts.caret, swatch: true})
+	}
 	return ds
 }
 

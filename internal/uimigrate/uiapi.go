@@ -154,6 +154,7 @@ var elementChains = map[string]bool{
 	"Browse":               true,
 	"Busy":                 true,
 	"Cache":                true,
+	"CaretColor":           true,
 	"CaretWidth":           true,
 	"Center":               true,
 	"Checked":              true,
