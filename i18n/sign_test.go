@@ -61,6 +61,8 @@ func TestNumberSignDisplay(t *testing.T) {
 		{"de", 0.25, NumberOptions{SignDisplay: SignAlways, Percent: true}, "+25 %"},
 		{"tr", 0.25, NumberOptions{SignDisplay: SignAlways, Percent: true}, "+%25"},
 		{"en", 0.25, NumberOptions{SignDisplay: SignExceptZero, Percent: true}, "+25%"},
+		{"en", 0.001, NumberOptions{SignDisplay: SignExceptZero, Percent: true}, "0%"},
+		{"en", math.NaN(), NumberOptions{SignDisplay: SignAlways, Percent: true}, "+NaN%"},
 
 		// Amounts, in the pattern of the locale, accounting included.
 		{"en", 1234, NumberOptions{SignDisplay: SignAlways, Currency: usd}, "+$1,234.00"},
@@ -69,6 +71,9 @@ func TestNumberSignDisplay(t *testing.T) {
 		{"en", 1234, NumberOptions{SignDisplay: SignAlways, Currency: usd, Accounting: true}, "+$1,234.00"},
 		{"de", 1234, NumberOptions{SignDisplay: SignAlways, Currency: eur}, "+1.234,00 €"},
 		{"ja", 1234, NumberOptions{SignDisplay: SignAlways, Currency: jpy}, "+￥1,234"},
+		{"en", math.NaN(), NumberOptions{SignDisplay: SignAlways, Currency: usd}, "+$NaN"},
+		{"en", negZero, NumberOptions{SignDisplay: SignAlways, Currency: usd}, "-$0.00"},
+		{"en", negZero, NumberOptions{SignDisplay: SignAlways, Currency: usd, Accounting: true}, "($0.00)"},
 
 		// Compact numbers, and compact percents.
 		{"en", 1234, NumberOptions{SignDisplay: SignAlways, Notation: CompactShort}, "+1.2K"},
