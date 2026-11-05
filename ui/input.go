@@ -89,6 +89,7 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 			key = physical
 		}
 		delete(rt.byPosition, physical)
+		rt.observeFocus(InputEvent{Kind: InputKeyUp, Key: key, PhysicalKey: physical, Mods: Modifiers(ev.Mods)})
 		if h := rt.focusHandler(); h != nil {
 			rt.deliver(h, InputEvent{Kind: InputKeyUp, Key: key, PhysicalKey: physical, Mods: Modifiers(ev.Mods)})
 		}
@@ -97,7 +98,7 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 	case platform.TextComposition:
 		taken = rt.editEvent(rt.replaced(editEvent{kind: editCompose, text: ev.Text, caret: ev.Caret}, ev))
 	case platform.SurfaceCommand:
-		rt.editEvent(editEvent{kind: editCommand, text: ev.Text})
+		rt.editEvent(editEvent{kind: editCommand, text: ev.Text, repeat: ev.Repeat})
 	case platform.SurfaceFocus:
 		rt.windowFocused = true
 		rt.blinkStart = rt.now()
@@ -310,6 +311,7 @@ const interactive = flagClickable | flagFocusable | flagEditable | flagSelectabl
 func (rt *engine) pointerDown(x, y float32, button int, mods Modifiers, clicks int) {
 	rt.downing++
 	defer rt.endDown()
+	rt.observePointer(InputEvent{Kind: InputPointerDown, Button: button, Mods: mods, Clicks: max(clicks, 1)})
 	chain := rt.hitChain(x, y)
 	rt.setHover(chain)
 	rt.pressDragger = 0
@@ -454,6 +456,7 @@ func (rt *engine) pointerUp(button, clicks int) {
 		rt.ups = append(rt.ups, [2]int{button, clicks})
 		return
 	}
+	rt.observePointer(InputEvent{Kind: InputPointerUp, Button: button, Mods: rt.mods, Clicks: max(clicks, 1)})
 	if button == rt.pressButton {
 		clicks = rt.pressClicks // the engine's, which may have started over
 	}
@@ -740,8 +743,10 @@ func (rt *engine) scrollKey(mods Modifiers, key Key) bool {
 
 // focusChain returns the focused element and its ancestors, innermost
 // first.
-func (rt *engine) focusChain() []uint64 {
-	var chain []uint64
+func (rt *engine) focusChain() []uint64 { return rt.appendFocusChain(nil) }
+
+// appendFocusChain appends focusChain() to chain.
+func (rt *engine) appendFocusChain(chain []uint64) []uint64 {
 	for s := rt.states[rt.focused]; s != nil; s = rt.states[s.parent] {
 		chain = append(chain, s.id)
 		if s.parent == 0 {
@@ -801,7 +806,8 @@ func (rt *engine) keyDownPhysical(mods Modifiers, key, physical Key, repeat bool
 	if rt.inspectKey(mods, key) {
 		return true
 	}
-	k := keyEvent{mods, key}
+	rt.observeFocus(InputEvent{Kind: InputKeyDown, Key: key, PhysicalKey: physical, Mods: mods, Repeat: repeat})
+	k := keyEvent{mods, key, repeat}
 	if key == KeyEscape && mods == 0 && rt.dragCancel() {
 		return true
 	}
@@ -866,12 +872,14 @@ func (rt *engine) keyDownPhysical(mods Modifiers, key, physical Key, repeat bool
 		return false
 	}
 	if (key == KeyEnter || key == KeySpace) && mods == 0 {
-		// A focused button or link takes them before the window's
-		// shortcuts, such as a dialog's default button; a toggle takes
-		// Space before them, and Enter after.
+		// A focused button takes them before the window's shortcuts,
+		// such as a dialog's default button; a toggle takes Space before
+		// them, and Enter after. A link takes Enter alone, as in a web
+		// page: Space scrolls as it does elsewhere.
 		s := rt.states[rt.focused]
 		window := s != nil && key == KeyEnter && s.flags&flagToggle != 0
-		if s != nil && !rt.claimedBy(k, window) && s.flags&flagClickable != 0 && s.flags&flagDisabled == 0 {
+		if s != nil && !rt.claimedBy(k, window) && s.flags&flagClickable != 0 && s.flags&flagDisabled == 0 &&
+			(key == KeyEnter || s.role != RoleLink) {
 			s.click(0)
 			rt.focusVisible = true
 			rt.requestFrame()
@@ -977,12 +985,13 @@ func (rt *engine) moveFocus(back bool) {
 // Enter choosing the item the Down highlighted.
 func (rt *engine) routeKeys() {
 	rt.unrouted = rt.unrouted[:0]
+	rt.shortcutRepeat = false
 	if len(rt.keys) == 0 && len(rt.retried) == 0 {
 		return
 	}
 	chain := rt.focusChain()
 	route := func(k keyEvent, retried bool) bool {
-		r := shortcutReg{mods: k.mods, key: k.key, retried: retried}
+		r := shortcutReg{mods: k.mods, key: k.key, retried: retried, repeat: k.repeat}
 		if target, found := routeKey(rt.regs, chain, k); found {
 			if slices.ContainsFunc(rt.delivered, func(d shortcutReg) bool { return d.id == target }) {
 				return false
@@ -1055,10 +1064,10 @@ func (rt *engine) settleKeys() {
 	}
 	chain := rt.focusChain()
 	for _, r := range rt.unrouted {
-		k := keyEvent{r.mods, r.key}
+		k := keyEvent{r.mods, r.key, r.repeat}
 		if _, found := routeKey(rt.nextRegs, chain, k); found && !r.retried {
 			rt.retried = append(rt.retried, k) // runFrame asks for the frame
-		} else if !found && k == (keyEvent{0, KeyEscape}) {
+		} else if !found && k.mods == 0 && k.key == KeyEscape {
 			rt.host.escape()
 		}
 	}
@@ -1072,7 +1081,7 @@ func (rt *engine) shortcut(id uint64, mods Modifiers, key Key) bool {
 	for i, d := range rt.delivered {
 		if d.id == id && d.mods == mods && d.key == key {
 			rt.delivered = append(rt.delivered[:i], rt.delivered[i+1:]...)
-			rt.consumed = true
+			rt.consumed, rt.shortcutRepeat = true, d.repeat
 			return true
 		}
 	}
@@ -1082,6 +1091,15 @@ func (rt *engine) shortcut(id uint64, mods Modifiers, key Key) bool {
 // editEvent delivers text, a composition or an edit command to the focus,
 // and reports whether an element took it.
 func (rt *engine) editEvent(ev editEvent) bool {
+	if rt.observers > 0 {
+		kind := InputText
+		if ev.kind == editCompose {
+			kind = InputCompose
+		} else if ev.kind == editCommand {
+			kind = InputCommand
+		}
+		rt.observeFocus(InputEvent{Kind: kind, Text: ev.text, Caret: ev.caret})
+	}
 	if s := rt.states[rt.focused]; s != nil && s.textClient != nil && rt.windowFocus() && s.flags&flagDisabled == 0 && (s.editor == nil || !s.editor.readOnly) {
 		if ev.kind == editInsert || ev.kind == editCompose {
 			var r *TextInputRange
@@ -1137,8 +1155,8 @@ func (rt *engine) editEvent(ev editEvent) bool {
 
 // commandKeys are the keys of the Edit menu's commands.
 var commandKeys = map[string]keyEvent{
-	"copy": {Cmd, KeyC}, "cut": {Cmd, KeyX}, "paste": {Cmd, KeyV}, "selectAll": {Cmd, KeyA},
-	"undo": {Cmd, KeyZ}, "redo": {Cmd | Shift, KeyZ},
+	"copy": {mods: Cmd, key: KeyC}, "cut": {mods: Cmd, key: KeyX}, "paste": {mods: Cmd, key: KeyV}, "selectAll": {mods: Cmd, key: KeyA},
+	"undo": {mods: Cmd, key: KeyZ}, "redo": {mods: Cmd | Shift, key: KeyZ},
 }
 
 // commandKey has an edit command that the focus, or ed, doesn't take go to
@@ -1151,6 +1169,7 @@ func (rt *engine) commandKey(ev editEvent, ed *editor) bool {
 	if runtime.GOOS != "darwin" || ev.kind != editCommand || !ok || ed != nil && ed.wants(k) {
 		return false
 	}
+	k.repeat = ev.repeat
 	rt.keys = append(rt.keys, k)
 	rt.requestFrame()
 	return true
