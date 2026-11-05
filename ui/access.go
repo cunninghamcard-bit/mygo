@@ -27,6 +27,8 @@ const (
 	RoleGroup
 	RoleText
 	RoleButton
+	// RoleLink is a link: focused, it takes Enter but not Space, which
+	// scrolls, as in a web page.
 	RoleLink
 	RoleCheckBox
 	RoleRadio
@@ -193,6 +195,31 @@ func (e *node) Level(n int) *node {
 	return e
 }
 
+// KeyShortcuts tells assistive technology a key, with exactly the
+// modifiers mods, that presses or focuses the element, as ARIA's
+// aria-keyshortcuts: the window's shortcut that runs a toolbar button's
+// command, or opens a command palette, which screen readers read with the
+// element's name. It is written as the platform's menus write it ("⌘K"
+// for Cmd+K on macOS, "Ctrl+K" elsewhere). It only tells the key: handle
+// it with Shortcut on the context, or OnWindowShortcut. Call it once for
+// each key that does.
+func (e *node) KeyShortcuts(mods Modifiers, key Key) *node {
+	s := shortcutText(accelerator(mods, key))
+	if s == "" {
+		return e
+	}
+	for k := range strings.FieldsSeq(e.keyShortcuts) {
+		if k == s {
+			return e
+		}
+	}
+	if e.keyShortcuts != "" {
+		s = e.keyShortcuts + " " + s
+	}
+	e.keyShortcuts = s
+	return e
+}
+
 // ActiveDescendant tells assistive technology that d has the keyboard
 // focus while the element does: the option the arrows are on in a list or
 // a menu that keeps the focus itself, as a combobox's input does. Call it
@@ -232,11 +259,13 @@ func (e *node) accessRole() (platform.AccessRole, bool) {
 }
 
 // leafRole reports whether elements of a role take the text inside them
-// as their name, rather than showing it as elements of its own.
+// as their name, rather than showing it as elements of its own. A column
+// header shows what is inside it too, as ARIA's columnheader, whose
+// children are not presentational: a sort button in it is reached.
 func leafRole(r platform.AccessRole) bool {
 	switch r {
 	case platform.RoleGroup, platform.RoleList, platform.RoleScroll, platform.RoleDialog, platform.RoleAlertDialog, platform.RolePopup, platform.RoleStatus,
-		platform.RoleTabList, platform.RoleTable, platform.RoleRow, platform.RoleCell, platform.RoleTree, platform.RoleListItem,
+		platform.RoleTabList, platform.RoleTable, platform.RoleRow, platform.RoleCell, platform.RoleColumnHeader, platform.RoleTree, platform.RoleListItem,
 		platform.RoleToolbar, platform.RoleRadioGroup, platform.RoleMenu, platform.RoleMenuBar, platform.RoleNavigation:
 		return false
 	}
@@ -255,7 +284,7 @@ func (e *node) innerText() string {
 		return ""
 	}
 	if e.kind == kindText {
-		return e.text // its text holds that of the elements inside it
+		return e.accessText() // its text holds that of the elements inside it
 	}
 	var t innerTexts
 	for ch := e.first; ch != nil; ch = ch.next {
@@ -283,7 +312,7 @@ func (t *innerTexts) walk(e *node) {
 		return
 	}
 	if e.kind == kindText {
-		t.add(e.text)
+		t.add(e.accessText())
 		return // its text holds that of the elements inside it
 	}
 	for ch := e.first; ch != nil; ch = ch.next {
@@ -472,9 +501,10 @@ func (rt *engine) accessDetails(e *node, n *platform.AccessNode) {
 	if e.chooseMany {
 		n.States |= platform.AccessMultiselectable
 	}
-	// Rows and items of lists, and statuses, are named by their content,
-	// as leaves are, but show what is inside them too, as a toast's button.
-	if n.Label == "" && (leafRole(n.Role) || n.Role == platform.RoleListItem || n.Role == platform.RoleRow || n.Role == platform.RoleStatus) {
+	// Rows and items of lists, column headers and statuses are named by
+	// their content, as leaves are, but show what is inside them too, as a
+	// toast's button.
+	if n.Label == "" && (leafRole(n.Role) || n.Role == platform.RoleListItem || n.Role == platform.RoleRow || n.Role == platform.RoleColumnHeader || n.Role == platform.RoleStatus) {
 		n.Label = e.innerText()
 	}
 	switch e.checked {
@@ -495,6 +525,7 @@ func (rt *engine) accessDetails(e *node, n *platform.AccessNode) {
 	n.Current = platform.AccessCurrent(e.current)
 	n.Level = e.level
 	n.Value = e.accValue
+	n.KeyShortcuts = e.keyShortcuts
 	if e.hasRange {
 		n.Min, n.Max, n.Now, n.Step = e.accRange[0], e.accRange[1], e.accRange[2], e.accStep
 	}

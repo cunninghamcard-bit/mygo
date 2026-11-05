@@ -175,6 +175,9 @@ func goCalls(name, value string) []string {
 	case "background", "background-color":
 		return []string{call("Background", goColor(e.bg))}
 	case "box-shadow":
+		if len(e.shadows) == 0 {
+			return []string{call("NoShadow")}
+		}
 		var calls []string
 		for _, sh := range e.shadows {
 			method := "Shadow"
@@ -237,6 +240,8 @@ func goCalls(name, value string) []string {
 		return []string{call("CaretColor", goColor(e.ts.caret))}
 	case "line-clamp":
 		return []string{call("MaxLines", strconv.Itoa(e.maxLines))}
+	case "z-index":
+		return []string{call("ZIndex", strconv.Itoa(int(e.zIndex)))}
 	case "white-space":
 		if lower == "nowrap" {
 			return []string{call("NoWrap")}
