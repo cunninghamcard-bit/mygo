@@ -298,6 +298,7 @@ var elementChains = map[string]bool{
 	"PlaceholderColor":     true,
 	"PopoverMenu":          true,
 	"PopoverMenuButton":    true,
+	"PreserveSpaces":       true,
 	"RadialGradient":       true,
 	"Radius":               true,
 	"Range":                true,
