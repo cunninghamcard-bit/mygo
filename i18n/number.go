@@ -106,7 +106,6 @@ type NumberFormatter struct {
 	sys      *numberSystem
 	pat      *numberPattern
 	o        NumberOptions
-	sd       SignDisplay // of the sign it writes, from o.SignDisplay
 	min, max int
 	cur      *currencyFormat // of amounts, nil for numbers
 }
@@ -132,7 +131,7 @@ func NewNumberFormatter(locale string, o NumberOptions) *NumberFormatter {
 	}
 	k := keyOf(locale)
 	sys := k.dat().numbers(k.latn)
-	f = &NumberFormatter{key: k, sys: sys, pat: &sys.decimal, o: o, sd: o.SignDisplay}
+	f = &NumberFormatter{key: k, sys: sys, pat: &sys.decimal, o: o}
 	if o.Percent {
 		f.pat = &sys.percent
 	}
@@ -187,7 +186,7 @@ func (f *NumberFormatter) Format(n any) string {
 // plus goes before it, as the formatter's sign display says for one that
 // is negative or not and zero or not once rounded.
 func (f *NumberFormatter) sign(neg, zero bool) (neg2, plus bool) {
-	switch f.sd {
+	switch f.o.SignDisplay {
 	case SignAlways:
 		return neg, !neg
 	case SignExceptZero:
@@ -224,17 +223,32 @@ func (f *NumberFormatter) special(v float64) (string, bool) {
 	return "", false
 }
 
+// affixes returns the affixes of p around a number that is negative or
+// not, and a plus when one goes with it, in the place the locale puts
+// its minus: "€ +1.234,00" rather than "+€ 1.234,00" in Dutch, whose
+// negative pattern is "€ -", as ICU swaps the minus for the plus. A
+// locale whose negative pattern holds no minus gets the plus before its
+// prefix, as Intl does.
+func (f *NumberFormatter) affixes(p *numberPattern, neg, plus bool) (prefix, suffix string) {
+	if neg {
+		return p.negPrefix, p.negSuffix
+	}
+	if !plus {
+		return p.prefix, p.suffix
+	}
+	if strings.Contains(p.negPrefix, f.sys.minus) || strings.Contains(p.negSuffix, f.sys.minus) {
+		return strings.Replace(p.negPrefix, f.sys.minus, f.sys.plus, 1),
+			strings.Replace(p.negSuffix, f.sys.minus, f.sys.plus, 1)
+	}
+	return f.sys.plus + p.prefix, p.suffix
+}
+
 // withSign writes sym in the affixes of p, as the sign display has a
 // number that is negative or not: "+NaN", "-∞", "∞" for one written
 // without a sign.
 func (f *NumberFormatter) withSign(p *numberPattern, sym string, neg bool) string {
 	neg, plus := f.sign(neg, false)
-	prefix, suffix := p.prefix, p.suffix
-	if neg {
-		prefix, suffix = p.negPrefix, p.negSuffix
-	} else if plus {
-		prefix = f.sys.plus + prefix
-	}
+	prefix, suffix := f.affixes(p, neg, plus)
 	return prefix + sym + suffix
 }
 
@@ -256,24 +270,14 @@ func (f *NumberFormatter) formatDecimal(decimal string) string {
 		// The name of the currency of the plural form of the amount.
 		p = &f.cur.forms[f.cur.plural(f, intPart, frac, 0)]
 	}
-	if neg {
-		b.WriteString(p.negPrefix)
-	} else {
-		if plus {
-			b.WriteString(f.sys.plus)
-		}
-		b.WriteString(p.prefix)
-	}
+	prefix, suffix := f.affixes(p, neg, plus)
+	b.WriteString(prefix)
 	f.sys.writeInteger(&b, intPart, p, !f.o.NoGrouping, f.o.MinIntegerDigits)
 	if frac != "" {
 		b.WriteString(f.sys.decimalSep)
 		f.sys.writeDigits(&b, frac)
 	}
-	if neg {
-		b.WriteString(p.negSuffix)
-	} else {
-		b.WriteString(p.suffix)
-	}
+	b.WriteString(suffix)
 	return b.String()
 }
 

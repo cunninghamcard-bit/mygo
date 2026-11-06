@@ -10,6 +10,7 @@ import (
 // comments say.
 func TestNumberSignDisplay(t *testing.T) {
 	usd, eur, jpy := CurrencyOf("USD"), CurrencyOf("EUR"), CurrencyOf("JPY")
+	chf, ils := CurrencyOf("CHF"), CurrencyOf("ILS")
 	negZero := math.Copysign(0, -1)
 	for _, c := range []struct {
 		locale string
@@ -71,6 +72,13 @@ func TestNumberSignDisplay(t *testing.T) {
 		{"en", 1234, NumberOptions{SignDisplay: SignAlways, Currency: usd, Accounting: true}, "+$1,234.00"},
 		{"de", 1234, NumberOptions{SignDisplay: SignAlways, Currency: eur}, "+1.234,00 €"},
 		{"ja", 1234, NumberOptions{SignDisplay: SignAlways, Currency: jpy}, "+￥1,234"},
+		// The plus takes the minus's place, not the prefix's: Dutch writes
+		// "€ -1.234,00" and so "€ +1.234,00" (with a no-break space), Swiss German "CHF-1'234.00"
+		// and so "CHF+1'234.00", Hebrew "‏‎-1,234.00 ‏₪" and so
+		// "‏‎+1,234.00 ‏₪".
+		{"nl", 1234, NumberOptions{SignDisplay: SignAlways, Currency: eur}, "€\u00a0+1.234,00"},
+		{"de-CH", 1234, NumberOptions{SignDisplay: SignAlways, Currency: chf}, "CHF+1'234.00"},
+		{"he", 1234, NumberOptions{SignDisplay: SignAlways, Currency: ils}, "\u200f\u200e+1,234.00\u00a0\u200f\u20aa"},
 		{"en", math.NaN(), NumberOptions{SignDisplay: SignAlways, Currency: usd}, "+$NaN"},
 		{"en", negZero, NumberOptions{SignDisplay: SignAlways, Currency: usd}, "-$0.00"},
 		{"en", negZero, NumberOptions{SignDisplay: SignAlways, Currency: usd, Accounting: true}, "($0.00)"},
