@@ -4,7 +4,7 @@
 
 `ui.MenuButton` creates a button showing a label and an arrow, which opens
 a menu of the system's below it, as the system's pop-up buttons do: as the
-pointer goes down on it, or for Enter, Space or Down while it has the
+pointer goes down on it, or for Enter, Space, Up or Down while it has the
 keyboard focus. The function builds the items when the menu opens, and runs
 again in the frame after one was chosen, where its `Chosen` reports it:
 
@@ -53,7 +53,9 @@ an app's own design, the system's menu is the one that looks out of place,
 and a right-click's drawn menu and a ⋯ button's system menu, side by
 side, look like two menus. `Element.PopoverMenuButton` gives such a menu to
 any button, as `Element.Menu` does, and takes the same function as
-`PopoverMenu`, so one function serves both:
+`PopoverMenu`, so one function serves both. To draw every menu of a
+window so, `Menu`'s included, see [every menu of a
+window](context-menu.md#every-menu-of-a-window):
 
 ```go
 menu := func(m *ui.Menu) {
@@ -76,7 +78,7 @@ row.Children(func() {
 ```
 
 It opens as the system's would, as the pointer goes down on the button,
-and for Enter, Space or Down while the button has the focus: below the
+and for Enter, Space, Up or Down while the button has the focus: below the
 button, lined up with its start, or above it where the window has no room.
 Pressing the button again closes it. It has the keys, the focus and the
 look of `PopoverMenu`'s: it takes the focus as it opens, on its first
@@ -92,8 +94,9 @@ as it sees the system's. In a toolbar's overflow menu, choosing the button
 opens its drawn menu below the overflow button.
 
 A drawn menu's items are elements: in tests, `tt.Click` on the button
-opens it, `tt.HasText` finds its items and `tt.Click` chooses one, while
-`tt.Menu` lists only the system's menus.
+opens it, `tt.HasText` finds its items and `tt.Click` chooses one.
+`tt.Menu`, `tt.ChooseMenuItem` and `tt.CloseMenu` work on it as on the
+system's, so a test passes with either.
 
 ## Without a look
 
@@ -141,7 +144,7 @@ m.Popup(func(panel ui.Element) {
 
 It has the keys and the focus of `PopoverMenuButton`'s, which is built on
 the same parts with the theme's look: it opens as the pointer goes down
-on the button, and for Enter, Space or Down while the button has the
+on the button, and for Enter, Space, Up or Down while the button has the
 focus, on its first item then; Up, Down, Home, End and typing the first
 letters of an item move the highlight, past items `Disabled`; Right and
 Left open and close submenus, the other way round right to left; Enter

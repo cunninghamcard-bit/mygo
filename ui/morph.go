@@ -376,8 +376,12 @@ func (p *Painter) morph(e *node, r *contentRec, x, y float32, ts textStyle, span
 	if pr.toFrame == p.rt.frame {
 		tx, ty = pr.toX, pr.toY
 	}
-	start := int32(len(p.s.Glyphs))
-	pr.each(r, e.x, e.y, x, y, tx, ty, color, sp, k, func(g text.Glyph, _ []rune, rx, ry, gx, gy, size float32, c Color, shade text.Shade, alpha float32) {
+	// stroke, while the strokes of the glyphs paint under them all, is
+	// the width of the text's (TextStroke), and shadow tells that the
+	// shadows they cast paint under those (TextShadow).
+	var stroke float32
+	var shadow bool
+	show := func(g text.Glyph, _ []rune, rx, ry, gx, gy, size float32, c Color, shade text.Shade, alpha float32) {
 		if alpha <= 0.001 || size <= 0 {
 			return
 		}
@@ -398,7 +402,15 @@ func (p *Painter) morph(e *node, r *contentRec, x, y float32, ts textStyle, span
 		// subpixel on an opaque background where the system asks for it,
 		// which renderers make gray while it is transformed; at another,
 		// gray.
-		gi := sys.Glyph(g.Font, g.ID, s*q, at, shade, p.opaque && q == 1)
+		var gi text.GlyphImage
+		switch {
+		case shadow:
+			gi, c = shadowGlyph(sys, g.Font, g.ID, s*q, at, shade, false, ts.shadow.blur/2*s*q), ts.shadow.color
+		case stroke > 0:
+			gi, c = strokeGlyph(sys, g.Font, g.ID, s*q, at, shade, p.opaque && q == 1, stroke*s*q), ts.strokeColor
+		default:
+			gi = sys.Glyph(g.Font, g.ID, s*q, at, shade, p.opaque && q == 1)
+		}
 		if !gi.OK {
 			return
 		}
@@ -411,11 +423,34 @@ func (p *Painter) morph(e *node, r *contentRec, x, y float32, ts textStyle, span
 		// Its origin goes to its pen, as far from it as text at rest has
 		// it, and it scales around it.
 		ox, oy := gx*s+origin-pen, gy*s+baseline-base
+		if shadow {
+			ox, oy = ox+ts.shadow.x*s, oy+ts.shadow.y*s
+		}
 		if q != 1 || size != 1 || abs32(ox-o) > 1e-3 || abs32(oy-baseline) > 1e-3 {
 			sg.Transform = scene.Translation(ox, oy).Mul(scene.Scaling(size/q, size/q)).Mul(scene.Translation(-o, -baseline))
 		}
 		p.s.Glyphs = append(p.s.Glyphs, sg)
-	})
+	}
+	if shadowGlyph != nil && ts.shadow.color.A > 0 {
+		shadow = true
+		start := int32(len(p.s.Glyphs))
+		pr.each(r, e.x, e.y, x, y, tx, ty, color, sp, k, show)
+		if end := int32(len(p.s.Glyphs)); end > start {
+			p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
+		}
+		shadow = false
+	}
+	if strokeGlyph != nil && ts.strokeWidth > 0 && ts.strokeColor.A > 0 {
+		stroke = ts.strokeWidth
+		start := int32(len(p.s.Glyphs))
+		pr.each(r, e.x, e.y, x, y, tx, ty, color, sp, k, show)
+		if end := int32(len(p.s.Glyphs)); end > start {
+			p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
+		}
+		stroke = 0
+	}
+	start := int32(len(p.s.Glyphs))
+	pr.each(r, e.x, e.y, x, y, tx, ty, color, sp, k, show)
 	if end := int32(len(p.s.Glyphs)); end > start {
 		p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
 	}

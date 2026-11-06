@@ -538,6 +538,10 @@ func pageState(p *mygo.Page) string {
 
 func newWindow(t *testing.T, opts mygo.WindowOptions) *mygo.Window {
 	t.Helper()
+	// Registered first, it runs last, with the test's own cleanups and
+	// this window's Destroy done.
+	check := watchLeftBehind()
+	t.Cleanup(func() { check(t.Errorf) })
 	w := mygo.NewWindow(opts)
 	t.Cleanup(w.Destroy)
 	return w
@@ -814,6 +818,63 @@ func TestGlass(t *testing.T) {
 	if class, _, _, _, _ := material(w); class != "" {
 		t.Errorf("no material: %s", class)
 	}
+}
+
+// TestGlassWithoutTransparent gives Liquid Glass to windows that are not
+// transparent (macOS 26). The glass shows what is under it in the window,
+// which is made clear while it shows, and opaque again once another
+// material or none takes its place. A rounded window's content view gives
+// its color up to the glass too, and gets it back, the color set meanwhile.
+// A transparent window stays clear.
+func TestGlassWithoutTransparent(t *testing.T) {
+	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, Vibrancy: mygo.VibrancyGlass})
+	class, _, _, _, ok := material(w)
+	if !ok {
+		t.Skip("the material is macOS's")
+	}
+	if class != "NSGlassEffectView" {
+		t.Skip("the system has no NSGlassEffectView")
+	}
+	wantClear := func(name string, w *mygo.Window) {
+		t.Helper()
+		if opaque, alpha, _ := windowBacking(w); opaque || alpha != 0 {
+			t.Errorf("%s: opaque %v, background alpha %v; want a clear window", name, opaque, alpha)
+		}
+	}
+	wantClear("glass", w)
+	w.SetVibrancy(mygo.VibrancyPopover)
+	if opaque, alpha, _ := windowBacking(w); !opaque || alpha == 0 {
+		t.Errorf("popover: opaque %v, background alpha %v; want the window opaque again", opaque, alpha)
+	}
+	w.SetVibrancy(mygo.VibrancyGlassClear)
+	wantClear("clear glass", w)
+	w.SetVibrancy(mygo.VibrancyNone)
+	if opaque, alpha, _ := windowBacking(w); !opaque || alpha == 0 {
+		t.Errorf("no material: opaque %v, background alpha %v; want the window opaque again", opaque, alpha)
+	}
+
+	view := ui.View(func(c *ui.Context) { c.Root().Background(ui.Transparent) })
+	r := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, Frameless: true, CornerRadius: 12, BackgroundColor: "#ff0000",
+		Vibrancy: mygo.VibrancyGlass, Content: view})
+	if opaque, alpha, _, _ := roundedBacking(r); opaque || alpha != 0 {
+		t.Errorf("rounded glass: opaque %v, the content view's color's alpha %v; want both clear", opaque, alpha)
+	}
+	r.SetBackgroundColor("#00ff0080")
+	if _, alpha, _, _ := roundedBacking(r); alpha != 0 {
+		t.Errorf("rounded glass after SetBackgroundColor: the content view's color's alpha %v; want it clear", alpha)
+	}
+	r.SetVibrancy(mygo.VibrancyNone)
+	if opaque, alpha, _, _ := roundedBacking(r); opaque || alpha < .49 || alpha > .51 {
+		t.Errorf("rounded, no material: opaque %v, the content view's color's alpha %v; want a clear window, the new color on the content view", opaque, alpha)
+	}
+	if _, _, radius, _, _ := material(r); radius != 12 {
+		t.Errorf("rounded, no material: corners %v, want 12", radius)
+	}
+
+	tr := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, Transparent: true, Vibrancy: mygo.VibrancyGlass})
+	wantClear("transparent glass", tr)
+	tr.SetVibrancy(mygo.VibrancyNone)
+	wantClear("transparent, no material", tr)
 }
 
 // TestNativeGlassOverWebView puts a toolbar of the system's glass over a
@@ -1180,6 +1241,12 @@ func TestRestoreMaximizedCaptionless(t *testing.T) {
 				b.X+b.Width <= d.Bounds.X+d.Bounds.Width && b.Y+b.Height <= d.Bounds.Y+d.Bounds.Height
 		})
 		want := w.ContentBounds()
+		// Restore undoes minimizing alone: a window not minimized stays
+		// maximized.
+		w.Restore()
+		if !w.IsMaximized() {
+			t.Errorf("display %d: Restore took a visible window out of maximized", i)
+		}
 		w.Minimize()
 		eventually(t, "a minimized window", w.IsMinimized)
 		w.Restore()
@@ -2679,6 +2746,29 @@ func TestUserInitiated(t *testing.T) {
 	navigated("https://example.com/went", true)
 }
 
+// TestSrcdocIframes checks that srcdoc iframes load in a page whose
+// OnWillNavigate cancels every navigation it is asked about, as it is
+// asked about the main frame's alone: on Linux before WebKitGTK 2.56,
+// which tells no navigation's frame, it was asked about theirs, named or
+// not, and they stayed blank (mainFrameNavigation).
+func TestSrcdocIframes(t *testing.T) {
+	w := newWindow(t, mygo.WindowOptions{Hidden: true})
+	var srcdoc atomic.Bool
+	w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
+		if e.URL == "about:srcdoc" {
+			srcdoc.Store(true)
+		}
+		e.PreventDefault()
+	})
+	w.Page().LoadHTML(`<iframe id=a srcdoc="<p id=x>unnamed</p>"></iframe><iframe id=b name=named srcdoc="<p id=x>named</p>"></iframe>`, "https://example.com/")
+	for _, id := range []string{"a", "b"} {
+		waitFor(t, w, `document.getElementById("`+id+`").contentDocument?.getElementById("x")`)
+	}
+	if srcdoc.Load() {
+		t.Error("OnWillNavigate was asked about an iframe's about:srcdoc")
+	}
+}
+
 func TestMenuActivation(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300})
 	w.Page().LoadHTML("<p>menus</p>", "")
@@ -3579,6 +3669,42 @@ func TestContentWindowObserved(t *testing.T) {
 	if mark, _, named, ok := axAttribute(w, "Bold", "AXMenuItemMarkChar"); ok && (mark != "✓" || !named) {
 		t.Errorf("the menu item's mark is %q, named %v", mark, named)
 	}
+	// What never opens says nothing of being open, which VoiceOver
+	// would read as "collapsed".
+	for _, label := range []string{"Settings", "Name", "Edit menu", "Bold"} {
+		if v, _, named, ok := axAttribute(w, label, "AXExpanded"); ok && named {
+			t.Errorf("%s names AXExpanded, %q", label, v)
+		}
+	}
+}
+
+// TestContentWindowValueText reads the text a slider gives for its value
+// (aria-valuetext) beside the number, as VoiceOver does.
+func TestContentWindowValueText(t *testing.T) {
+	var frames atomic.Int32
+	volume, steps := 30.0, 3.0
+	view := func(c *ui.Context) {
+		frames.Add(1)
+		ui.Column(c).Fill().Padding(20).Gap(10).Children(func() {
+			ui.Slider(c, &volume, 0, 100).Label("Volume").Value("30 percent")
+			ui.Slider(c, &steps, 0, 10).Label("Steps")
+		})
+	}
+	w := newWindow(t, mygo.WindowOptions{Title: "Value text", Width: 400, Height: 200, Content: ui.View(view)})
+	eventually(t, "a frame", func() bool { return frames.Load() > 0 })
+	eventually(t, "the sliders", func() bool {
+		nodes, _ := accessibility(w)
+		return slices.ContainsFunc(nodes, func(n accessNode) bool { return n.role == roleSlider && n.label == "Steps" })
+	})
+	if _, _, _, ok := axAttribute(w, "Volume", "AXValue"); !ok {
+		t.Skip("only macOS reads attributes")
+	}
+	if v, _, named, _ := axAttribute(w, "Volume", "AXValueDescription"); v != "30 percent" || !named {
+		t.Errorf("the slider's value text is %q, named %v, want %q", v, named, "30 percent")
+	}
+	if v, _, named, _ := axAttribute(w, "Steps", "AXValueDescription"); named {
+		t.Errorf("a slider without a value text names AXValueDescription, %q", v)
+	}
 }
 
 // TestContentWindowListAccessibility reads the rows of a List as assistive
@@ -4105,6 +4231,60 @@ func TestContentWindowPopoverMenuButton(t *testing.T) {
 	pressKeys("Down")
 	pressKeys("Return")
 	eventually(t, "the choice", func() bool { return chosen.Load() == "As PNG" })
+}
+
+// TestContentWindowDrawnEditMenu right-clicks a text input of a window
+// that draws its menus (SetMenuPresentation): its editing menu draws in the
+// window and takes the focus, the system shows none, and its keys choose
+// Select All, after which the focus is back in the input, whose typing
+// replaces the text.
+func TestContentWindowDrawnEditMenu(t *testing.T) {
+	var frames atomic.Int32
+	var text atomic.Value
+	var inInput atomic.Bool
+	value := "hello world"
+	text.Store(value)
+	view := func(c *ui.Context) {
+		frames.Add(1)
+		c.SetMenuPresentation(ui.PopoverMenus)
+		ui.Box(c).Fill().Padding(20).Children(func() {
+			ui.TextInput(c, &value).Size(200, 32)
+		})
+		text.Store(value)
+		inInput.Store(c.FocusTakesText())
+	}
+	w := newWindow(t, mygo.WindowOptions{Title: "Drawn editing menu", Width: 400, Height: 300, Content: ui.View(view)})
+	eventually(t, "a frame", func() bool { return frames.Load() > 0 })
+	// focusIs asks for a frame each time it looks, so that the view reads
+	// the focus as it is, not as it was when the window last drew.
+	focusIs := func(input bool) func() bool {
+		return func() bool {
+			w.Invalidate()
+			return inInput.Load() == input
+		}
+	}
+	// A click first gives the window the keyboard, with no window manager.
+	if _, ok := popupMenus(); !ok || !click(w, 120, 36) {
+		t.Skip("context menu automation not available on this platform")
+	}
+	eventually(t, "the input's focus", focusIs(true))
+	rightClick(w, 120, 36)
+	if !wait.Poll(focusIs(false)) {
+		menus, _ := popupMenus()
+		t.Fatalf("the menu never took the focus: %d frames, the system's menus %q", frames.Load(), menus)
+	}
+	if menus, _ := popupMenus(); len(menus) != 0 {
+		t.Fatalf("the system shows a menu: %q", menus)
+	}
+	// It opened on no item: End goes to its last, Select All, on every
+	// platform.
+	if !pressKeys("End") {
+		t.Skip("key automation not available on this platform")
+	}
+	pressKeys("Return")
+	eventually(t, "the focus back in the input", focusIs(true))
+	pressKeys("x")
+	eventually(t, "the text replaced", func() bool { return text.Load() == "x" })
 }
 
 // TestReorderByDragging drags a row of a list below another with the

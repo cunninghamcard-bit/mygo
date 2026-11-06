@@ -3,6 +3,7 @@ package ui
 import (
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/scene"
@@ -180,7 +181,7 @@ const (
 	// state while the page is in the history, shown or not.
 	flagPage
 	// flagFocusTarget marks an element the focus goes to but Tab does not
-	// stop at, as a Router's page.
+	// stop at, as a Router's page, or an element of TabStop(false).
 	flagFocusTarget
 	// flagDividers marks an element drawing lines between its children,
 	// listed in Context.dividers.
@@ -229,6 +230,17 @@ type textStyle struct {
 	background Color
 	// selection is the highlight of selected text, the theme's when unset.
 	selection Color
+	// caret is the color of the insertion caret, the theme's accent when
+	// unset.
+	caret Color
+	// strokeWidth and strokeColor stroke the outlines of the glyphs
+	// under their fill (TextStroke).
+	strokeWidth float32
+	strokeColor Color
+	// tabSize puts tab stops every tabSize spaces (TabSize).
+	tabSize float32
+	// shadow is the shadow the glyphs cast (TextShadow).
+	shadow TextShadow
 }
 
 const (
@@ -249,9 +261,13 @@ const (
 	setSelection
 	setLang
 	setDecoOffset
+	setCaret
+	setStroke
+	setTabSize
+	setShadow
 
 	// setAll has every bit of textStyle.set.
-	setAll = setDecoOffset<<1 - 1
+	setAll = setShadow<<1 - 1
 )
 
 // layoutStyle is what lays an element out, of what the view sets on it:
@@ -288,15 +304,20 @@ type layoutStyle struct {
 	justifyItems           Align // of a grid
 	cell                   gridCell
 	justifySelf            Align
+	// sticky holds the element in its scroll container by its insets
+	// (Sticky), which then do not move it as relative positioning does.
+	sticky bool
 	// baselines is set on the row of a field in a form, which lines up
 	// the first lines of its label and control.
 	baselines bool
 
-	maxLines int
-	single   bool
-	noWrap   bool
-	balance  bool
-	ellipsis string
+	maxLines   int
+	single     bool
+	noWrap     bool
+	balance    bool
+	pretty     bool
+	keepSpaces bool
+	ellipsis   string
 }
 
 // Element is a node of a frame's user interface. The functions that create
@@ -337,7 +358,11 @@ type node struct {
 	translatePct     [2]float32 // TranslatePercent's
 	originX, originY float32
 	originSet        bool
-	world            scene.Affine
+	// originAttached puts the origin on the element's point on its target
+	// as its layout attaches it (AttachedOrigin).
+	originAttached bool
+
+	world scene.Affine
 	// content is how its content changes (ContentTransition), when set.
 	content    ContentTransition
 	contentSet bool
@@ -372,6 +397,10 @@ type node struct {
 	// assistive technology reads, while they still show and take input
 	// (AccessHidden).
 	accessHidden bool
+	// accessDisabled tells assistive technology that it and the elements
+	// inside it are unavailable, while they keep the focus, the pointer
+	// and their look (AccessDisabled).
+	accessDisabled bool
 
 	// Painting.
 	bg          Color
@@ -401,6 +430,9 @@ type node struct {
 	undimmed   bool // kept at its opacity while disabled (DimDisabled)
 	cursor     Cursor
 	paintFn    func(p *Painter, r Rect)
+	// hitFn tells where in its box the element takes the pointer
+	// (HitTest).
+	hitFn func(x, y float32, r Rect) bool
 	// objectFn draws the inline objects of a text (DrawObjects).
 	objectFn func(p *Painter, at int, r Rect)
 	// styleFn sets the colors and opacity the element paints with, as it
@@ -412,6 +444,7 @@ type node struct {
 	// Input the element takes itself (HandleInput), and where the caret of
 	// the text it takes is (TextCaret).
 	inputFn    func(InputEvent) bool
+	observeFn  func(InputEvent) // the input in it (ObserveInput)
 	textClient TextInputClient
 	caret      Rect
 	takesText  bool
@@ -441,6 +474,9 @@ type node struct {
 	maximizeButton bool
 	fit            Fit
 	gray           bool
+	// objectPos is where ObjectPosition puts the picture in its box, from
+	// its middle: 0, 0 by default.
+	objectPos [2]float32
 	// ringOffset and ringColor are the offset and the color of the
 	// element's focus ring, where ringSet says it sets them.
 	ringOffset float32
@@ -461,27 +497,42 @@ type node struct {
 	role     Role
 	checked  int8
 	expanded bool
-	// busy marks content about to change (Busy), and current the item
-	// the element is the current one of (Current).
-	busy    bool
-	current Current
-	// vertical marks a slider going up (Vertical).
-	vertical bool
+	// busy marks content about to change (Busy), current the item the
+	// element is the current one of (Current), and autoComplete what the
+	// suggestions of a text input complete (AutoComplete).
+	busy         bool
+	current      Current
+	autoComplete AutoComplete
+	// orient is the way the element runs for assistive technology:
+	// Vertical for a slider going up (Vertical), or what Orientation
+	// says; 0 to find it from the element.
+	orient Orientation
 	// tip marks an element with a tooltip (TooltipBase).
 	tip bool
 	// highlighted is set on the option of a select the pointer or the
 	// arrows are on, and keepOpen on an item of a menu that leaves the
-	// menu open as it is chosen (KeepOpen).
-	highlighted bool
-	keepOpen    bool
-	accValue    string
-	accRange    [3]float64
-	hasRange    bool
+	// menu open as it is chosen (KeepOpen). focusHighlights marks an
+	// option of a select, which assistive technology focusing highlights,
+	// as the arrows do, rather than choosing it.
+	highlighted     bool
+	focusHighlights bool
+	keepOpen        bool
+	accValue        string
+	accRange        [3]float64
+	hasRange        bool
 	// accFill describes the element to assistive technology further, as
 	// a code editor its text and selection.
 	accFill func(n *platform.AccessNode)
 	// accStep is how far the keys move the value of a range.
 	accStep float64
+	// keyShortcuts are the keys that press or focus the element, as the
+	// platform writes them (KeyShortcuts).
+	keyShortcuts string
+	// accGrid is the element's RowCount, ColumnCount, RowIndex and
+	// ColumnIndex, and accSet its place in its set and the set's size
+	// (PositionInSet), 0 for those not given.
+	accGrid [4]int32
+	accSet  [2]int32
 
 	// Layout results, in DIPs relative to the window.
 	x, y, w, h float32
@@ -509,6 +560,12 @@ type node struct {
 	barsFrom       *node
 	rowIndex       int
 	rowsOf         *listFrame
+	// snap is how the element, a scroll container, snaps (ScrollSnap), and
+	// snapAlign how the element lines up with the container around it
+	// that does (SnapAlign): Start, Center or End plus one, horizontally
+	// in its low four bits and vertically in its high four, 0 for none.
+	snap      Snap
+	snapAlign uint8
 	// focusGroup makes the element a focus group (FocusGroup), whose
 	// arrows click the element they move to with groupSelects.
 	focusGroup   Orientation
@@ -533,8 +590,9 @@ type node struct {
 	activeDescendant *node
 	nameFrom         *node
 	// nameJoin makes the element's name nameFrom's followed by its Label,
-	// as a range slider's knobs.
-	nameJoin bool
+	// as a range slider's knobs; labelledBy makes it nameFrom's in place
+	// of its Label (LabelledBy).
+	nameJoin, labelledBy bool
 	// focusTo is the element taking the focus that Focus and AutoFocus
 	// give this one, and whose focus Focused reports: the input of the box
 	// around it (field).
@@ -543,9 +601,14 @@ type node struct {
 	choosesItems    bool
 	search          bool
 	// description tells assistive technology more than the name, and
-	// invalid marks a value that is not valid (Description, Error).
-	description string
-	invalid     bool
+	// invalid marks a value that is not valid (Description, Error,
+	// Invalid). describedBy are the elements whose text describes it too
+	// (DescribedBy), and errorMessage those holding its error, read while
+	// it is invalid (ErrorMessage).
+	description  string
+	invalid      bool
+	describedBy  []*node
+	errorMessage []*node
 	// field is set on a Field, form on a Form, whose layout makes its
 	// labels as wide as the widest.
 	field *fieldParts
@@ -554,7 +617,7 @@ type node struct {
 	// as a table's; followX is the scroll container whose horizontal
 	// offset the element's content follows, as a table's header follows
 	// its rows; sort is the order a table's column header shows: 1
-	// ascending, 2 descending.
+	// ascending, 2 descending, 3 another (SortDirection).
 	rowMinW float32
 	followX *node
 	sort    int8
@@ -564,11 +627,18 @@ type node struct {
 	// marks one with children.
 	level      int
 	expandable bool
-	// chooseMany marks a GridView choosing several items, and gridFit is
-	// how many columns its items took.
+	// chooseMany marks a GridView choosing several items, or an element
+	// whose items are (Multiselectable), and gridFit is how many columns
+	// a GridView's items took.
 	chooseMany bool
 	gridFit    *gridFit
-	tl         *text.Layout
+	// roleDescription names the element's role to assistive technology
+	// (RoleDescription), controls are the elements it controls
+	// (Controls), and hasPopup the kind of popup it opens (HasPopup).
+	roleDescription string
+	controls        []*node
+	hasPopup        Popup
+	tl              *text.Layout
 	measured
 	// lay says what the layout cache may do with the element
 	// (layOwner, layReuse), and laid when layoutBox last laid it out, in
@@ -579,11 +649,26 @@ type node struct {
 	// animates (1 if it was in its parent's flow, 2 if absolute), and
 	// ghosts an element holding such copies; lift one flying with a
 	// Match, which paints over the rest of its layer (matches.lifted).
-	// attach is where Attach puts the element, 0 for nowhere.
-	leaving uint8
-	ghosts  bool
-	lift    bool
-	attach  attachment
+	// attach is where Attach puts the element, 0 for nowhere, and placed
+	// where AttachTo put it as this frame laid it out, on whichever side
+	// of its target, flips the sides it went to (flipAcross, flipDown).
+	leaving       uint8
+	ghosts        bool
+	lift          bool
+	attach        attachment
+	placed        attachment
+	flips         uint8
+	edgeMarginSet bool
+	// edgeMargin, when edgeMarginSet, is how far AttachTo keeps the
+	// element from the window's edges (AttachEdgeMargin), in place of
+	// windowMargin.
+	edgeMargin float32
+	// zIndex orders the element's painting and its hits among its
+	// siblings (ZIndex); zOrder is set on an element with a child having
+	// one, which paints and commits its children in that order alone
+	// (zindex.go).
+	zIndex int32
+	zOrder bool
 	// serial is the order the pass made the element in: of overlays, the
 	// one made last shows on top.
 	serial int32
@@ -1078,6 +1163,41 @@ type attachment uint8
 
 func (a attachment) anchors() (at, self Anchor) { return Anchor((a - 1) / 15), Anchor((a - 1) % 15) }
 
+// flipped returns a with its anchors on the other side across (x) and
+// down (y) their boxes.
+func (a attachment) flipped(x, y bool) attachment {
+	at, self := a.anchors()
+	if x {
+		at, self = at.acrossFlipped(), self.acrossFlipped()
+	}
+	if y {
+		at, self = at.downFlipped(), self.downFlipped()
+	}
+	return attachment(1 + at*15 + self)
+}
+
+// acrossFlipped returns the anchor on the other side across a box: the
+// right for the left, the end for the start.
+func (a Anchor) acrossFlipped() Anchor {
+	switch {
+	case a < AnchorTopStart:
+		return a/3*3 + 2 - a%3
+	case a < AnchorTopEnd:
+		return a + 3
+	}
+	return a - 3
+}
+
+// downFlipped returns the anchor on the other side down a box: the bottom
+// for the top.
+func (a Anchor) downFlipped() Anchor {
+	if a < AnchorTopStart {
+		return (2-a/3)*3 + a%3
+	}
+	base := AnchorTopStart + (a-AnchorTopStart)/3*3
+	return base + 2 - (a - base)
+}
+
 // Attach takes the element out of its parent's layout, as Absolute does,
 // and puts its point self on the point at of the parent's padding box:
 // Attach(ui.AnchorTopRight, ui.AnchorCenter) centers a badge on the top
@@ -1104,7 +1224,8 @@ func (e *node) Attach(at, self Anchor) *node {
 //
 // The element is target's popover: its elements follow target as Tab
 // moves, and a press on target is not outside it (PressedOutside). Build
-// target before it, in the same frame.
+// target before it, in the same frame. AttachedAnchors tells the side it
+// went to.
 func (e *node) AttachTo(target *node, at, self Anchor) *node {
 	if target == nil {
 		return e
@@ -1116,6 +1237,57 @@ func (e *node) AttachTo(target *node, at, self Anchor) *node {
 		// Built in an Overlay, it reads as what it is attached to.
 		e.setDir(target.rtl(), false)
 	}
+	return e
+}
+
+// AttachedAnchors returns the points of its target's box and of its own
+// that AttachTo put together as the layout placed the element: those
+// asked for, or, where it went to the other side of target or the other
+// way along it to stay in the window, those across or down from them, as
+// Floating UI's placement: AnchorTop and AnchorBottom for a panel asked
+// below its button, with AttachTo(button, ui.AnchorBottom, ui.AnchorTop),
+// that went above it. Start and end anchors stay start and end ones. The
+// view reads the last frame's, which are those asked for until the
+// element is laid out, as in the frame it first shows; Draw reads this
+// frame's. From that first frame, AttachedOrigin puts the element's
+// transform origin on its own point, and a Motion's Flip mirrors its
+// Enter and Exit, on the side the layout chose. An element not attached
+// to another returns its Attach anchors, or AnchorTopLeft twice without
+// them.
+func (e *node) AttachedAnchors() (at, self Anchor) {
+	a := e.placed
+	if a == 0 && e.attach != 0 && e.hasState() && e.st.asked == e.attach {
+		a = e.st.placed
+	}
+	if a == 0 {
+		a = e.attach
+	}
+	if a == 0 {
+		return AnchorTopLeft, AnchorTopLeft
+	}
+	return a.anchors()
+}
+
+// AttachEdgeMargin sets how far an element placed with AttachTo stays
+// from the window's edges, v DIPs on each side, where it is 4 unless set:
+// a panel that must not touch the edges of a small window keeps 12 from
+// them, as the inset-modified containing block of CSS Anchor Positioning
+// keeps a positioned box inside the insets given to it. It is the room
+// the element flips and moves to stay in, and that one scrolling is
+// limited to.
+func (e *node) AttachEdgeMargin(v float32) *node {
+	e.edgeMargin, e.edgeMarginSet = max(v, 0), true
+	return e
+}
+
+// AttachedOrigin sets the transform origin on the element's own point
+// that AttachTo puts on its target, on whichever side of it the layout
+// puts the element (AttachedAnchors), from the frame it shows: a tooltip
+// or a menu scaling in, or out, grows from the edge nearest its trigger,
+// as Radix's popper transform origin. It replaces TransformOrigin on an
+// element attached to another.
+func (e *node) AttachedOrigin() *node {
+	e.originAttached = true
 	return e
 }
 
@@ -1200,6 +1372,30 @@ func (e *node) IgnoreInput(ignore bool) *node { e.ignoreInput = ignore; return e
 //
 // RoleNone leaves out the element but not those inside it.
 func (e *node) AccessHidden(hide bool) *node { e.accessHidden = hide; return e }
+
+// AccessDisabled tells assistive technology that the element and those
+// inside it are unavailable when off is true, as HTML's aria-disabled
+// does, while they keep the keyboard focus, their place in the Tab order,
+// the pointer and their look: a screen reader still reaches them and reads
+// them, as dimmed or unavailable, with their Description, which can say
+// why. It is for what the user must still find while it cannot be used,
+// as a menu item whose action is blocked, a tab disabled but still in the
+// arrows' order, or a submit button while the form is not valid:
+//
+//	del := ui.Button(c, "Delete project").AccessDisabled(app.locked)
+//	if app.locked {
+//		del.Description("Unlock the project to delete it")
+//	}
+//	if del.Clicked() && !app.locked {
+//		app.deleteProject()
+//	}
+//
+// It only tells: clicks and keys still reach the element, which the view
+// ignores while it is unavailable, and it does not dim it, which the view
+// styles itself if it wants. Assistive technology focuses it, but neither
+// presses nor edits it. Disabled does all of it at once: no clicks, no
+// focus, and half the opacity.
+func (e *node) AccessDisabled(off bool) *node { e.accessDisabled = off; return e }
 
 // Hidden hides the element and its children when hide is true, as CSS's
 // display: none does: unlike an Invisible element, it takes no room in
@@ -1388,8 +1584,23 @@ func (e *node) InsetShadow(x, y, blur, spread float32, c Color) *node {
 	return e
 }
 
-// Opacity makes the element and its children translucent.
+// NoShadow takes off the outer and inner shadows added so far, as CSS's
+// box-shadow: none, so that the Shadow and InsetShadow calls after it
+// start afresh.
+func (e *node) NoShadow() *node { e.shadows = e.shadows[:0]; return e }
+
+// Opacity makes the element and its children translucent as one group,
+// as CSS's opacity does: what they paint is composited first and then
+// faded, so that children overlapping one another, or the element's
+// background under them, never show through each other. Where nothing
+// they paint overlaps, they paint faded each on its own, which looks the
+// same and costs nothing more; otherwise they render into a layer of the
+// GPU first, in which text is smoothed in grayscale, as in Cache's. A web
+// view or a material reading its backdrop inside the element shows
+// through no layer: there each thing fades on its own. Disabled's dimming
+// fades each thing on its own too.
 func (e *node) Opacity(o float32) *node {
+	linkGroups()
 	e.opacity, e.opacitySet = max(0, min(o, 1)), true
 	return e
 }
@@ -1434,6 +1645,23 @@ func (ts *textStyle) selectionColor(t *Theme) Color {
 		return ts.selection
 	}
 	return t.Selection
+}
+
+// CaretColor sets the color of the insertion caret of the text inputs in
+// the element, as CSS's caret-color does, a field's own text color for
+// one; the theme's accent is the color elsewhere.
+func (e *node) CaretColor(c Color) *node {
+	e.ts.caret = c
+	e.ts.set |= setCaret
+	return e
+}
+
+// caretColor is the color of the style's insertion caret.
+func (ts *textStyle) caretColor(t *Theme) Color {
+	if ts.set&setCaret != 0 {
+		return ts.caret
+	}
+	return t.Accent
 }
 
 // LineHeight sets the height of lines of text as a multiple of the font
@@ -1512,11 +1740,63 @@ func (e *node) TextBackground(c Color) *node {
 	return e
 }
 
+// TextStroke strokes the outlines of the glyphs of text width DIPs wide
+// in c, under their fill, as CSS's -webkit-text-stroke with paint-order:
+// stroke fill: the half of the stroke outside the glyphs shows around
+// them, a halo of c, as a chart's labels over its bars take one of the
+// background's color to stand out. A text's strokes all go under all
+// its glyphs, so that one glyph's stroke never covers its neighbor; the
+// stroke goes around the edge of the pixels of color glyphs, as emoji.
+// Underlines and strikethroughs are not stroked. A width of 0 strokes
+// nothing, where the elements around it stroke their text.
+func (e *node) TextStroke(width float32, c Color) *node {
+	linkStrokes()
+	e.ts.strokeWidth, e.ts.strokeColor = max(width, 0), c
+	e.ts.set |= setStroke
+	return e
+}
+
+// TextShadow casts a shadow of the element's text, as CSS's text-shadow:
+// the shapes of its glyphs, offset by x and y DIPs, blurred by blur, in c,
+// under the glyphs and their strokes, as a chart's labels over its bars
+// or a caption over a photo take one to stand out. The text of the
+// elements inside takes it too, and theirs where they set one; a
+// transparent c casts none, where those around it cast one. A span's
+// Shadow sets one for its text. The shadow of color glyphs, as emoji, is
+// that of their pixels' shape; underlines and strikethroughs cast none.
+//
+//	ui.Text(c, "Golden hour").TextColor(ui.RGB(255, 255, 255)).TextShadow(0, 1, 4, ui.RGBA(0, 0, 0, 0.6))
+func (e *node) TextShadow(x, y, blur float32, c Color) *node {
+	e.ts.shadow = NewTextShadow(x, y, blur, c)
+	e.ts.set |= setShadow
+	return e
+}
+
+// TabSize puts the tab stops of the element's text every n spaces of its
+// font from the start of each line, as CSS's tab-size: a tab advances
+// to the next of them, as a code block indents with tabs of 2 or 4
+// columns. A space is as wide as the font's, letter spacing included.
+// Without it, or with n at 0, tabs advance as the system's text stack
+// sets them, which differs between systems.
+func (e *node) TabSize(n float32) *node {
+	if n > 0 {
+		linkTabs.Do(text.Shared().UseTabSize)
+	}
+	e.ts.tabSize = max(n, 0)
+	e.ts.set |= setTabSize
+	return e
+}
+
+// linkTabs lets the text system set tab stops once an element sets a tab
+// size, so that apps that never do not link it.
+var linkTabs sync.Once
+
 // Strikethrough strikes text through.
 func (e *node) Strikethrough() *node { e.ts.strike = true; e.ts.set |= setStrike; return e }
 
 // LetterSpacing adds v DIPs after every character of text, or tightens it
-// with a negative v, as for labels in capitals.
+// with a negative v, as for labels in capitals; 0 takes away that of the
+// text around it, as for a number within such a label.
 func (e *node) LetterSpacing(v float32) *node {
 	e.ts.spacing = v
 	e.ts.set |= setSpacing
@@ -1577,6 +1857,28 @@ func (e *node) NoWrap() *node { e.noWrap = true; return e }
 // layout, as the text system keeps it.
 func (e *node) Balance() *node { e.balance = true; return e }
 
+// Pretty keeps the last line of each paragraph of the element's text from
+// holding a single word, as CSS's text-wrap: pretty does at least: the
+// line before gives it a word, and the lines before stay as they are. A
+// paragraph of body text then ends on more than one word, at no cost to
+// the rest of its lines; Balance balances them all instead.
+func (e *node) Pretty() *node {
+	linkPretty.Do(text.Shared().UsePretty)
+	e.pretty = true
+	return e
+}
+
+// linkPretty lets the text system wrap text pretty once an element or a
+// TextShape asks for it, so that apps that never do not link it.
+var linkPretty sync.Once
+
+// PreserveSpaces keeps the spaces the element's text ends its lines with,
+// and a text of only spaces, with their advance, as CSS's white-space:
+// break-spaces does: a gap made of spaces between two texts in a row, or
+// the padding a monospaced column is aligned with. Without it spaces
+// ending a line take no room, as with white-space: normal.
+func (e *node) PreserveSpaces() *node { e.keepSpaces = true; return e }
+
 // Ellipsis sets what ends text that MaxLines or SingleLine cuts, "…" by
 // default.
 func (e *node) Ellipsis(s string) *node { e.ellipsis = s; return e }
@@ -1587,7 +1889,8 @@ func (e *node) Label(s string) *node { e.label = s; return e }
 
 // Disabled disables the element and those inside it when d is true: they
 // report no clicks, take no focus, and show at half their opacity, unless
-// DimDisabled turns that off.
+// DimDisabled turns that off. AccessDisabled keeps their clicks and their
+// focus, for what assistive technology must still reach.
 func (e *node) Disabled(d bool) *node {
 	if d {
 		e.flags |= flagDisabled
@@ -1631,6 +1934,23 @@ func (e *node) hasState() bool {
 // Focusable lets the element take the keyboard focus, by a click or Tab.
 func (e *node) Focusable() *node { e.flags |= flagFocusable; return e }
 
+// TabStop makes the element focusable, and sets whether Tab and Shift+Tab
+// stop at it, as they do at a Focusable element. One that is no tab stop
+// is HTML's tabindex="-1": it takes the focus from a click, from Focus and
+// AutoFocus, and from assistive technology, while Tab passes over it, on
+// to what is inside it and after it: a container that takes the focus to
+// hold its keys, as a card or a dialog's panel, without coming before its
+// own controls.
+func (e *node) TabStop(stop bool) *node {
+	e.flags |= flagFocusable
+	if stop {
+		e.flags &^= flagFocusTarget
+	} else {
+		e.flags |= flagFocusTarget
+	}
+	return e
+}
+
 // DragWindow makes the element a handle that moves the window, such as the
 // title bar of a frameless window. A double click on it maximizes the
 // window, as on a title bar.
@@ -1651,6 +1971,26 @@ func (e *node) MaximizeButton() *node {
 
 // PassThrough lets the pointer reach what is under the element.
 func (e *node) PassThrough() *node { e.flags |= flagPassThrough; return e }
+
+// HitTest sets where in its box the element takes the pointer: where fn
+// reports true for the pointer at (x, y), in the coordinates Draw paints
+// in, r being its box as Draw gets it. Elsewhere the pointer reaches what
+// is under it, as with PassThrough, so that a pie's segment, a map's
+// region or a ring takes a press, the hover and the cursor only where it
+// paints, as SVG's pointer-events: visiblePainted. The elements inside it
+// take the pointer as they would; fn runs as the pointer moves and
+// presses, on the window's thread, and only tests:
+//
+//	ring := func(r ui.Rect) *ui.Path {
+//		var p ui.Path
+//		cx, cy := r.X+r.W/2, r.Y+r.H/2
+//		return p.Circle(cx, cy, r.W/2).Circle(cx, cy, r.W/2-12).FillRule(ui.EvenOdd)
+//	}
+//	ui.Box(c).Size(120, 120).
+//		Draw(func(p *ui.Painter, r ui.Rect) { p.FillPath(ring(r), accent) }).
+//		HitTest(func(x, y float32, r ui.Rect) bool { return ring(r).Contains(x, y) }).
+//		OnClick(func() { … })
+func (e *node) HitTest(fn func(x, y float32, r Rect) bool) *node { e.hitFn = fn; return e }
 
 // FocusRing sets whether MyGo rings the element when it has the keyboard
 // focus from the keyboard, as it does by default. Widgets that ring a part
@@ -1737,6 +2077,9 @@ func (e *node) add(child *node) {
 	e.forgetIntrinsic()
 	child.parent = e
 	child.depth = e.depth + 1
+	if child.zIndex != 0 {
+		e.zOrder = true // set before it was added, as on a copy leaving (ghostOf)
+	}
 	if e.last == nil {
 		e.first = child
 	} else {

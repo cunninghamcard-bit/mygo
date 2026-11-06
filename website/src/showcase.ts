@@ -252,10 +252,28 @@ export const showcase: ShowcaseApp[] = [
   {
     name: "NanoDoll",
     description:
-      "A minimal desktop container built for web AI. It opens the original ChatGPT, Claude and Gemini pages with your logins imported from the browser, turns any AI web page into a standalone satellite app with its own Dock icon, lays every tab out in an infinitely wide horizontal workspace, and adds a file manager and prompt library.",
+      "A minimal desktop container built for web AI. Turn web AIs into standalone desktop apps: multi-pane tiling, browser login import, prompt library, and nearby file manager.",
     url: "https://moonvy.com/apps/nano-doll/",
     author: "yArna",
-    mode: "web",
-    image: "/showcase/nanodoll.jpg",
+    mode: "native",
+    image: "/showcase/nanodoll-cover.png",
+  },
+  {
+    name: "Teebots",
+    description:
+      "A free desktop app for a small team of AI bots on your own Mac, Windows or Linux machine. Each bot uses your API key and model; chats, memory and files stay on the device.",
+    url: "https://teebots.ai",
+    author: "希嘉嘉",
+    mode: "native",
+    image: "/showcase/teebots.png",
+  },
+  {
+    name: "映刻 Screenpin",
+    description:
+      "A Windows screenshot and screen recording utility that stays in the system tray. Global shortcuts capture a region, pin images above other windows, stitch scrolling screenshots, or record a region and trim the result before exporting.",
+    url: "https://github.com/wiptgdxv/screenpin",
+    author: "wiptgdxv",
+    mode: "native",
+    image: "/showcase/screenpin.png",
   },
 ]

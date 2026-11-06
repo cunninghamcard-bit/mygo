@@ -23,6 +23,10 @@ menu a menu button opens. Over elements inside one another, the innermost
 one's tip shows, and one tip shows at a time. Give one to buttons showing
 only an icon, and to what a label alone does not explain.
 
+The focus counts for the element an element gives it to, its
+`ActiveDescendant`, as a menu drawn in the window gives it to the item the
+keys highlight: that one's tip shows.
+
 The tip takes the theme's `Inverse` and `InverseText` colors, its text and
 background turned over unless the theme sets them (see
 [themes](styling.md#themes)).
@@ -53,7 +57,9 @@ waits as the theme it is built with says.
 does: it decides when the tip shows and goes, as above, and `fn` styles the
 tip and builds its content. The tip goes above the element, centered, or
 below it where there is no room above; place it elsewhere with `AttachTo`,
-its margins keeping it apart from the element:
+its margins keeping it apart from the element. `AttachedAnchors` tells the
+side it went to, and `AttachedOrigin` scales it from the edge nearest the
+element (see [overlays](overlays.md#your-own-overlays)):
 
 ```go
 b := ui.Button(c, "").Label("Share").Description("Share with others")

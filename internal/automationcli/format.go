@@ -15,10 +15,10 @@ import (
 const maxText = 120
 
 // line describes an element on a line, without its ref: its role, its
-// label, value and key, and its states, leaving out what it lacks. full
-// adds what agents seldom need: placeholders under a label, descriptions,
-// ranges, selections, levels, actions, bounds and the element's ID, and
-// writes long text whole.
+// label, value, key and key shortcuts, and its states, leaving out what
+// it lacks. full adds what agents seldom need: placeholders under a
+// label, descriptions, ranges, selections, levels, actions, bounds and
+// the element's ID, and writes long text whole.
 func line(n *node, focus string, full bool) string {
 	var b strings.Builder
 	b.WriteString("[" + n.Role + "]")
@@ -36,6 +36,9 @@ func line(n *node, focus string, full bool) string {
 	if len(n.Key) > 0 {
 		b.WriteString(" key=" + keyText(n.Key))
 	}
+	if n.Shortcuts != "" {
+		b.WriteString(" keyshortcuts=" + quote(n.Shortcuts, true))
+	}
 	for _, s := range n.States {
 		// Every control can take the focus: saying so is noise.
 		if s != "focusable" {
@@ -44,6 +47,15 @@ func line(n *node, focus string, full bool) string {
 	}
 	if n.Current != "" {
 		b.WriteString(" current=" + n.Current)
+	}
+	if n.Complete != "" {
+		b.WriteString(" autocomplete=" + n.Complete)
+	}
+	if n.HasPopup != "" {
+		b.WriteString(" haspopup=" + n.HasPopup)
+	}
+	if n.RoleDescription != "" {
+		b.WriteString(" roledescription=" + quote(n.RoleDescription, full))
 	}
 	if n.ID == focus {
 		b.WriteString(" focused")
@@ -71,6 +83,18 @@ func line(n *node, focus string, full bool) string {
 	}
 	if n.SetSize != 0 {
 		fmt.Fprintf(&b, " item=%d/%d", n.PosInSet, n.SetSize)
+	}
+	// A table's or a grid's size and the place of a row or a cell in it,
+	// as the app gave them (aria-rowcount and the like), and the rows and
+	// columns a cell covers (aria-rowspan, aria-colspan).
+	for _, v := range [...]struct {
+		name string
+		n    int
+	}{{"rowcount", n.RowCount}, {"colcount", n.ColCount}, {"rowindex", n.RowIndex}, {"colindex", n.ColIndex},
+		{"rowspan", n.RowSpan}, {"colspan", n.ColSpan}} {
+		if v.n != 0 {
+			fmt.Fprintf(&b, " %s=%d", v.name, v.n)
+		}
 	}
 	if len(n.Actions) > 0 {
 		b.WriteString(" actions=" + strings.Join(n.Actions, ","))
