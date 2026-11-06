@@ -611,17 +611,17 @@ type node struct {
 	// attach is where Attach puts the element, 0 for nowhere, and placed
 	// where AttachTo put it as this frame laid it out, on whichever side
 	// of its target, flips the sides it went to (flipAcross, flipDown).
-	leaving uint8
-	ghosts  bool
-	lift    bool
-	attach  attachment
-	placed  attachment
-	flips   uint8
+	leaving       uint8
+	ghosts        bool
+	lift          bool
+	attach        attachment
+	placed        attachment
+	flips         uint8
+	edgeMarginSet bool
 	// edgeMargin, when edgeMarginSet, is how far AttachTo keeps the
 	// element from the window's edges (AttachEdgeMargin), in place of
 	// windowMargin.
-	edgeMargin    float32
-	edgeMarginSet bool
+	edgeMargin float32
 	// zIndex orders the element's painting and its hits among its
 	// siblings (ZIndex); zOrder is set on an element with a child having
 	// one, which paints and commits its children in that order alone
