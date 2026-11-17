@@ -202,14 +202,86 @@ func TestFocusPreventScroll(t *testing.T) {
 	}
 }
 
-// Focus takes at most one FocusOptions.
-func TestFocusTwoOptionsPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r != "ui: Focus takes at most one FocusOptions" {
-			t.Errorf("recovered %v", r)
+// AutoFocus and Handle.FocusWith forward FocusOptions.PreventScroll, also
+// when a handle's request waits before Bind or while hidden, and through a
+// field delegating focus to its input.
+func TestAutoFocusAndHandlePreventScroll(t *testing.T) {
+	for _, way := range []string{"AutoFocus", "HandleBeforeBind", "HandleWhileHidden"} {
+		for _, field := range []bool{false, true} {
+			for _, prevent := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/field=%v/prevent=%v", way, field, prevent), func(t *testing.T) {
+					var s ui.ScrollState
+					var query string
+					var h ui.Handle
+					show := way != "AutoFocus" && way != "HandleWhileHidden"
+					focused := false
+					if way == "HandleBeforeBind" {
+						h.FocusWith(ui.FocusOptions{PreventScroll: prevent})
+					}
+					tt := ui.NewTester(func(c *ui.Context) {
+						ui.Scroll(c.Key("scroll")).Height(100).Width(200).TrackScroll(&s).Children(func() {
+							ui.Box(c.Key("space")).Height(300).Width(100).Shrink(0)
+							if !show {
+								return
+							}
+							var e ui.Element
+							if field {
+								e = ui.SearchField(c.Key("q"), &query).Width(150)
+							} else {
+								e = ui.Button(c.Key("b"), "Below")
+							}
+							if way == "AutoFocus" {
+								e.AutoFocus(ui.FocusOptions{PreventScroll: prevent})
+							} else {
+								e.Bind(&h)
+							}
+							focused = e.Focused()
+						})
+					}, 400, 300)
+					tt.Frame()
+					if way == "HandleWhileHidden" {
+						h.FocusWith(ui.FocusOptions{PreventScroll: prevent})
+						tt.Frame()
+						if s.Y != 0 || focused {
+							t.Fatalf("while hidden: offset %v, focused %v", s.Y, focused)
+						}
+					}
+					if !show {
+						show = true
+						tt.Frame()
+						tt.Frame()
+					}
+					if !focused {
+						t.Fatal("the element did not get the focus")
+					}
+					if prevent && s.Y != 0 {
+						t.Errorf("PreventScroll scrolled to %v", s.Y)
+					}
+					if !prevent && s.Y <= 0 {
+						t.Errorf("without PreventScroll, offset stayed at %v", s.Y)
+					}
+				})
+			}
 		}
-	}()
-	ui.NewTester(func(c *ui.Context) {
-		ui.Box(c).Focus(ui.FocusOptions{}, ui.FocusOptions{})
-	}, 100, 100)
+	}
+}
+
+// Focus and AutoFocus take at most one FocusOptions.
+func TestFocusTwoOptionsPanic(t *testing.T) {
+	for name, fn := range map[string]func(e ui.Element){
+		"Focus":     func(e ui.Element) { e.Focus(ui.FocusOptions{}, ui.FocusOptions{}) },
+		"AutoFocus": func(e ui.Element) { e.AutoFocus(ui.FocusOptions{}, ui.FocusOptions{}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			want := "ui: " + name + " takes at most one FocusOptions"
+			defer func() {
+				if r := recover(); r != want {
+					t.Errorf("recovered %v, want %q", r, want)
+				}
+			}()
+			ui.NewTester(func(c *ui.Context) {
+				fn(ui.Box(c))
+			}, 100, 100)
+		})
+	}
 }
