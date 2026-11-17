@@ -19,8 +19,12 @@ type AccessInfo struct {
 	// (aria-roledescription), as a "carousel" group; "" for the
 	// platform's name of Role.
 	RoleDescription string
-	// Bounds is the element's visible box, in the window's DIPs as Find's.
-	Bounds Rect
+	// Bounds is the element's visible box, clipped by the scroll containers
+	// and clips around it, in the window's DIPs as Find's; W or H is 0 when
+	// none of it shows (Offscreen). UnclippedBounds is its transformed box
+	// before clipping, in the window's DIPs as the accessibility tree sends
+	// it to screen readers.
+	Bounds, UnclippedBounds Rect
 	// Checked is set on a check box, switch, radio button or menu item
 	// that is on, and on a toggle button pressed (aria-checked,
 	// aria-pressed); Mixed in its place on one partly on.
@@ -198,6 +202,9 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 		}
 		info := func() AccessInfo {
 			a := accessInfoOf(r, n, tree.Focus)
+			if s := t.rt.states[n.ID]; s != nil {
+				a.Bounds = t.rt.windowRect(Rect{s.vx, s.vy, s.vw, s.vh})
+			}
 			names := func(ids []uint64) []string {
 				var out []string
 				for _, id := range ids {
@@ -233,6 +240,7 @@ func roleOfNode(r platform.AccessRole) Role {
 // whose focus is focus.
 func accessInfoOf(r Role, n *platform.AccessNode, focus uint64) AccessInfo {
 	s, b := n.States, n.Bounds
+	unclipped := Rect{float32(b.X), float32(b.Y), float32(b.W), float32(b.H)}
 	// The choice among tabs, a tree's items, the rows of a list and the
 	// cells of a grid is AccessChecked, which screen readers read as
 	// selected.
@@ -257,7 +265,8 @@ func accessInfoOf(r Role, n *platform.AccessNode, focus uint64) AccessInfo {
 		Description:     n.Description,
 		Placeholder:     n.Placeholder,
 		RoleDescription: n.RoleDescription,
-		Bounds:          Rect{float32(b.X), float32(b.Y), float32(b.W), float32(b.H)},
+		Bounds:          unclipped,
+		UnclippedBounds: unclipped,
 		Checked:         s&platform.AccessChecked != 0 && !chosen,
 		Mixed:           s&platform.AccessMixed != 0,
 		Expanded:        s&platform.AccessExpanded != 0,

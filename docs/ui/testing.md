@@ -157,7 +157,9 @@ its error), `Vertical` and `Horizontal` (`aria-orientation`), `Level`,
 `PositionInSet` gives them), `Multiselectable`, `RowCount`,
 `ColumnCount`, `RowIndex` and `ColumnIndex` (of a
 [grid](accessibility.md#grids)), `RowSpan` and `ColumnSpan` (of its
-cells), `Min`, `Max` and `Now` of a range, and its `Bounds`. So a test
+cells), `Min`, `Max` and `Now` of a range, `Bounds` (its visible box,
+clipped as `Find`'s is) and `UnclippedBounds` (its transformed box before
+clipping). So a test
 checks
 that a state reaches assistive technology, not only that the view set
 it:

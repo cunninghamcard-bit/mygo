@@ -341,3 +341,46 @@ func TestTesterAccessLandmarks(t *testing.T) {
 		}
 	}
 }
+
+// TestTesterAccessBoundsClipped checks that AccessInfo.Bounds returns the
+// clipped visible box, matching Find, while UnclippedBounds holds the full
+// box before clipping, also under content zoom.
+func TestTesterAccessBoundsClipped(t *testing.T) {
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Box(c).Size(60, 25).Shrink(0).Clip().Children(func() {
+			ui.ButtonBase(c).Label("Clipped").Size(120, 40)
+		})
+		ui.Scroll(c).Size(200, 80).Children(func() {
+			ui.Box(c).Size(200, 200).Shrink(0)
+			ui.ButtonBase(c).Label("Below").Size(100, 30)
+		})
+	}, 300, 200)
+
+	clipped := accessOf(t, tt, ui.RoleButton, "Clipped")
+	findClip, _ := tt.Find("Clipped")
+	if clipped.Bounds != (ui.Rect{X: 0, Y: 0, W: 60, H: 25}) || clipped.Bounds != findClip {
+		t.Errorf("Clipped Bounds = %v, Find = %v", clipped.Bounds, findClip)
+	}
+	if clipped.UnclippedBounds != (ui.Rect{X: 0, Y: 0, W: 120, H: 40}) {
+		t.Errorf("Clipped UnclippedBounds = %v", clipped.UnclippedBounds)
+	}
+
+	below := accessOf(t, tt, ui.RoleButton, "Below")
+	findBelow, _ := tt.Find("Below")
+	if !below.Offscreen || below.Bounds.W != 0 || below.Bounds.H != 0 || below.Bounds != findBelow {
+		t.Errorf("Below Bounds = %v, Offscreen = %v, Find = %v", below.Bounds, below.Offscreen, findBelow)
+	}
+	if below.UnclippedBounds.W != 100 || below.UnclippedBounds.H != 30 {
+		t.Errorf("Below UnclippedBounds = %v", below.UnclippedBounds)
+	}
+
+	tt.SetZoom(2)
+	zoomed := accessOf(t, tt, ui.RoleButton, "Clipped")
+	findZoomed, _ := tt.Find("Clipped")
+	if zoomed.Bounds != (ui.Rect{X: 0, Y: 0, W: 120, H: 50}) || zoomed.Bounds != findZoomed {
+		t.Errorf("zoomed Bounds = %v, Find = %v", zoomed.Bounds, findZoomed)
+	}
+	if zoomed.UnclippedBounds != (ui.Rect{X: 0, Y: 0, W: 240, H: 80}) {
+		t.Errorf("zoomed UnclippedBounds = %v", zoomed.UnclippedBounds)
+	}
+}
