@@ -43,6 +43,7 @@ type valueDrag struct {
 // gets it when the pointer is released (Drop). A press dragging is no
 // click. Dragging reports the drag.
 func (e *node) Drag(value any) *node {
+	e.noteStateRead()
 	e.flags |= flagDraggable | flagHover
 	e.st.dragValue = value
 	if d := e.c.rt.drag; d != nil && d.src == e.id {
@@ -72,6 +73,7 @@ func (e *node) dragFrom(value func() any) *node {
 // edge, as to tear a tab out into a window of its own. A drag given up,
 // with Escape, is not missed.
 func (e *node) DragMissed() (Point, bool) {
+	e.noteStateRead()
 	if !e.hasState() || !e.st.dragMissed {
 		return Point{}, false
 	}
@@ -82,6 +84,7 @@ func (e *node) DragMissed() (Point, bool) {
 // Dragging reports whether the element is dragging its value (Drag), or
 // the pointer is dragging the element (Draggable).
 func (e *node) Dragging() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -98,6 +101,7 @@ func (e *node) Dragging() bool {
 //		app.move(f, dir)
 //	}
 func coreDrop[T any](e *node) (T, bool) {
+	e.noteStateRead()
 	var zero T
 	e.flags |= flagValueDrop
 	e.st.accepts = func(v any) bool { _, ok := v.(T); return ok }
@@ -112,6 +116,7 @@ func coreDrop[T any](e *node) (T, bool) {
 // Drop does, and returns the value dragged over it, for showing it would
 // take it.
 func coreDragOver[T any](e *node) (T, bool) {
+	e.noteStateRead()
 	var zero T
 	e.flags |= flagValueDrop
 	e.st.accepts = func(v any) bool { _, ok := v.(T); return ok }

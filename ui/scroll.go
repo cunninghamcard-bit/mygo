@@ -67,6 +67,7 @@ func (s *ScrollState) Scrolling() bool { return s.glide != nil }
 // A List keeps its place by its rows instead, and scrolls to a row with
 // its ListState.
 func (e *node) TrackScroll(s *ScrollState) *node {
+	e.noteStateRead()
 	if s != nil {
 		wrapElement(e).Bind(&s.Handle)
 	}
@@ -105,6 +106,7 @@ func (e *node) ScrollIntoView(options ...ScrollIntoViewOptions) *node {
 			panic("ui: animation durations must not be negative")
 		}
 	}
+	e.noteStateRead()
 	if !e.hasState() {
 		return e
 	}

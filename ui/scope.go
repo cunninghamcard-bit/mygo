@@ -197,6 +197,7 @@ func (e *node) Modal() *node {
 //		app.open = false
 //	}
 func (e *node) OverlayShortcut(mods Modifiers, key Key) bool {
+	e.noteStateRead()
 	if !e.hasState() || e.c.inert {
 		return false
 	}
@@ -213,6 +214,7 @@ func (e *node) OverlayShortcut(mods Modifiers, key Key) bool {
 // frame, keeps it open. A press before the element showed, as the one
 // opening it, is not outside it: an Overlay opened by a press stays.
 func (e *node) PressedOutside() bool {
+	e.noteStateRead()
 	if !e.hasState() || len(e.c.rt.downs) == 0 || e.st.born == e.c.rt.frame {
 		return false
 	}
@@ -229,6 +231,7 @@ func (e *node) PressedOutside() bool {
 // PressedOutside reports one outside. Unlike Pressed and Clicked, the
 // element does not take the pointer.
 func (e *node) PressedInside() bool {
+	e.noteStateRead()
 	if !e.hasState() || len(e.c.rt.downs) == 0 {
 		return false
 	}

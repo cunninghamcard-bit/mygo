@@ -429,6 +429,7 @@ func (rt *engine) runAfterBuild() {
 // as a widget of your own whose input changed what it edits: Changed
 // returns true for it, as for the widgets' own.
 func (e *node) SetChanged() *node {
+	e.noteStateRead()
 	if e.hasState() {
 		e.st.markChanged()
 	}

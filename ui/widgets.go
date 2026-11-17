@@ -69,6 +69,7 @@ func (e *node) AnimateWith(key any, target float32, d time.Duration, ease Easing
 // placeholder pulses with an opacity of 0.5 + 0.5*Loop("pulse", d,
 // ui.Bounce(ui.EaseInOut)).
 func (e *node) Loop(key any, period time.Duration, ease Easing) float32 {
+	e.noteStateRead()
 	st := e.st
 	if st.anims == nil {
 		st.anims = map[any]*anim{}
@@ -144,6 +145,7 @@ func button(c *context, label string, primary bool) *node {
 	styleButton(c, b, primary)
 	if label != "" {
 		b.Children(func() { coreText(c, label).SingleLine() })
+		b.childrenBuilt = false
 	}
 	return b
 }

@@ -18,6 +18,7 @@ package ui
 // (Focused, FocusWithin), and a Handle's FocusWithin before its control
 // is.
 func (e *node) FocusLeft() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}

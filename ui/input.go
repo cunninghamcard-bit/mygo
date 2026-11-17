@@ -1597,6 +1597,7 @@ func abs32(v float32) float32 {
 // Clicked reports whether the element was clicked, with the primary
 // button or by Enter or Space while focused, since the last frame.
 func (e *node) Clicked() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -1611,6 +1612,7 @@ func (e *node) Clicked() bool {
 // Clicks returns how many times the element was clicked since the last
 // frame.
 func (e *node) Clicks() int {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0
 	}
@@ -1628,6 +1630,7 @@ func (e *node) Clicks() int {
 // clicked, none for a click by the keyboard: with Clicked, a click with
 // Shift or Cmd does something else, as extending a choice.
 func (e *node) ClickModifiers() Modifiers {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0
 	}
@@ -1636,6 +1639,7 @@ func (e *node) ClickModifiers() Modifiers {
 
 // DoubleClicked reports a double click on the element.
 func (e *node) DoubleClicked() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -1650,6 +1654,7 @@ func (e *node) DoubleClicked() bool {
 // RightClicked reports a click with the secondary button, as for a
 // context menu.
 func (e *node) RightClicked() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -1682,6 +1687,7 @@ const (
 // as the window paints, it only paints the last frame's elements again,
 // as the toolkit's controls do for their hovered looks.
 func (e *node) Hovered() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -1733,6 +1739,7 @@ func (rt *engine) pressMove(x0, y0, x1, y1 float32) {
 // right-click's, is no press here, as CSS's :active and drags on the web
 // have it: PressedButton tells which button presses the element.
 func (e *node) Pressed() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -1766,6 +1773,7 @@ func (e *node) Pressed() bool {
 // the middle button, as a canvas, reads the button here and where the
 // pointer goes with PointerPosition.
 func (e *node) PressedButton() (button int, ok bool) {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0, false
 	}
@@ -1785,6 +1793,7 @@ func (e *node) PressedButton() (button int, ok bool) {
 // pressure, and goes by the pointer's speed for a mouse. Elements asking
 // for it get a frame whenever the pointer moves or the pressure changes.
 func (e *node) PressedPointer() (pointer PointerType, pressure float32, ok bool) {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0, 0, false
 	}
@@ -1805,6 +1814,7 @@ func (s *state) pressedPrimary() bool { return s.pressed && s.pressButton == 0 }
 // Focused reports whether the element has the keyboard focus: for a field
 // around an input, as SearchField's, whether its input has it.
 func (e *node) Focused() bool {
+	e.noteStateRead()
 	if e.hasState() && e.c.rt.insp.isForced(e.id, forceFocus|forceFocusVisible) {
 		return true
 	}
@@ -1826,6 +1836,7 @@ func (e *node) FocusVisible() bool {
 // FocusWithin reports whether the element or one of its descendants has
 // the keyboard focus.
 func (e *node) FocusWithin() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -1884,6 +1895,7 @@ type FocusOptions struct {
 // control focuses it where the user scrolled it, as on the web, and so does
 // the focus a page or a transition gives back.
 func (e *node) focus(reveal bool) {
+	e.noteStateRead()
 	if e != nil && e.focusTo != nil {
 		e.focusTo.focus(reveal)
 		return
@@ -1905,6 +1917,7 @@ func (e *node) focus(reveal bool) {
 // AutoFocus gives the element the keyboard focus in the frame it appears,
 // as the first field of a dialog.
 func (e *node) AutoFocus() *node {
+	e.noteStateRead()
 	if e.hasState() && e.st.born == e.c.rt.frame {
 		e.Focus()
 	}
@@ -1915,6 +1928,7 @@ func (e *node) AutoFocus() *node {
 // pressed while the element or one of its descendants had the focus. The
 // innermost element handling a key gets it; a disabled one handles none.
 func (e *node) Shortcut(mods Modifiers, key Key) bool {
+	e.noteStateRead()
 	if e.disabled() {
 		return false
 	}
@@ -1926,6 +1940,7 @@ func (e *node) Shortcut(mods Modifiers, key Key) bool {
 // get a frame whenever the pointer moves over them. The build that reads
 // the last moves of a press on the element sees where the pointer let go.
 func (e *node) PointerPosition() (x, y float32, over bool) {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0, 0, false
 	}
@@ -1943,6 +1958,7 @@ func (e *node) PointerPosition() (x, y float32, over bool) {
 // moves just before the pointer let go come while the element is still
 // pressed, and the press ends in the build after.
 func (e *node) Dragged() (dx, dy float32, ok bool) {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0, 0, false
 	}
@@ -1962,6 +1978,7 @@ func (e *node) Dragged() (dx, dy float32, ok bool) {
 // stops for a moment, or while nothing presses the element with the
 // primary button (Dragged).
 func (e *node) DragVelocity() (vx, vy float32) {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0, 0
 	}
@@ -1980,6 +1997,7 @@ func (e *node) DragVelocity() (vx, vy float32) {
 // move, ends no drag, nor does a drag with another button, nor a press
 // the system canceled (PressCanceled).
 func (e *node) DragEnded() (vx, vy float32, ok bool) {
+	e.noteStateRead()
 	if !e.hasState() {
 		return 0, 0, false
 	}
@@ -2011,6 +2029,7 @@ func (e *node) DragEnded() (vx, vy float32, ok bool) {
 //		app.width, app.preview = app.width+app.preview, 0
 //	}
 func (e *node) PressCanceled() bool {
+	e.noteStateRead()
 	if !e.hasState() || !e.st.canceled || e.st.pressed {
 		return false
 	}
@@ -2104,6 +2123,7 @@ func (d *dragTrack) velocities(now time.Time) [4]float32 {
 // Changed reports whether this widget's value changed in this build pass,
 // by the input it took as its constructor returned.
 func (e *node) Changed() bool {
+	e.noteStateRead()
 	if e.hasState() {
 		e.c.rt.applyInputs()
 	}
@@ -2117,6 +2137,7 @@ func (e *node) Changed() bool {
 // Submitted reports whether Enter was pressed in a single-line text input
 // in this build pass.
 func (e *node) Submitted() bool {
+	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}

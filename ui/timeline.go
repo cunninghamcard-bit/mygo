@@ -104,6 +104,7 @@ func (e *node) Timeline(key any, o TimelineOptions) *Timeline {
 	if o.Seek != nil && o.Progress != nil {
 		panic("ui: a Timeline takes Seek or Progress, not both")
 	}
+	e.noteStateRead()
 	if !e.hasState() {
 		return nil
 	}

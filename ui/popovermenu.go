@@ -390,6 +390,7 @@ func coreMenuBase(c *context, open *bool) *menuParts {
 //	m := ui.ContextMenuBase(c, row, &app.rowMenu)
 //	m.Popup(func(panel ui.Element) { ... })
 func coreContextMenuBase(c *context, target *node, open *bool) *menuParts {
+	target.noteStateRead()
 	target.flags |= flagContextMenu
 	return newMenu(c, target, open, false)
 }

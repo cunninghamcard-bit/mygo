@@ -142,6 +142,7 @@ func (rt *engine) closeLocals() {
 // the frame that shows it with Window.Invalidate, or Invalidate of the
 // c.Services() the view kept.
 func (e *node) OnUnmount(fn func()) *node {
+	e.noteStateRead()
 	if fn == nil {
 		if u, ok := e.st.locals[unmountKey{}].(*unmount); ok {
 			u.fn = nil

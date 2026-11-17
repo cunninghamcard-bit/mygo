@@ -36,6 +36,7 @@ func (e *node) DragDataFrom(data func() transfer.Data, options ...transfer.DragO
 	if len(options) == 1 {
 		o = options[0]
 	}
+	e.noteStateRead()
 	e.flags |= flagDraggable | flagHover
 	e.st.dataSource = &dataSource{data, o}
 	return e
@@ -45,6 +46,7 @@ func (e *node) DragDataFrom(data func() transfer.Data, options ...transfer.DragO
 // completed drop once, in the next frame. Decode custom formats explicitly
 // from the returned Data. Empty Formats accepts nothing.
 func coreDropData(e *node, options transfer.DropOptions) (transfer.Drop, bool) {
+	e.noteStateRead()
 	e.st.dataTarget = &options
 	e.c.rt.noteTarget()
 	if d := e.st.dataDropped; d != nil {
@@ -58,6 +60,7 @@ func coreDropData(e *node, options transfer.DropOptions) (transfer.Drop, bool) {
 // the advertised formats and operations while a matching drag is over it.
 // Hover never invokes a data provider.
 func coreDataDragOver(e *node, options transfer.DropOptions) (transfer.Offer, bool) {
+	e.noteStateRead()
 	e.st.dataTarget = &options
 	e.c.rt.noteTarget()
 	rt := e.c.rt

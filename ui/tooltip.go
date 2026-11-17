@@ -66,6 +66,7 @@ func coreTooltipBase(c *context, anchor *node, fn func(tip *node)) *node {
 // tooltipBase is TooltipBase, which also reports whether the keyboard
 // focus brought the tip rather than the pointer.
 func tooltipBase(c *context, anchor *node, fn func(tip *node)) (*node, bool) {
+	anchor.noteStateRead()
 	anchor.flags |= flagHover
 	anchor.tip = true
 	// The theme the anchor builds with sets how long the pointer rests on
