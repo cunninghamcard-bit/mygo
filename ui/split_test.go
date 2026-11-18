@@ -213,3 +213,58 @@ func TestSplitGapDynamic(t *testing.T) {
 		t.Fatalf("after omitting SplitGap, second pane x=101 = %v, want paneB %v", got, paneB)
 	}
 }
+
+// SplitGap applies in the same build pass without extra rebuilds, allocates no
+// extra per-frame closures compared to Split, works with Context.Key, and
+// rejects a trailing Element.Key as Split does.
+func TestSplitGapSamePassAndKey(t *testing.T) {
+	left := float32(100)
+	gap := float32(8)
+	builds := 0
+	var secondX float32
+	tt := NewTester(func(c *Context) {
+		builds++
+		Split(c.Key("sp"), &left, func() {
+			Box(c).Fill()
+		}, func() {
+			secondX = Box(c).Fill().Bounds().X
+		}).SplitGap(gap).Fill()
+	}, 300, 100)
+	if builds != 1 {
+		t.Fatalf("initial mount ran %d build passes, want 1", builds)
+	}
+	tt.Frame()
+	if secondX != 108 {
+		t.Fatalf("second pane X = %v, want 108", secondX)
+	}
+	buildsBefore := builds
+	gap = 14
+	tt.Frame()
+	if builds-buildsBefore != 1 {
+		t.Fatalf("changing SplitGap ran %d passes, want 1", builds-buildsBefore)
+	}
+	tt.Frame()
+	if secondX != 114 {
+		t.Fatalf("after gap=14, second pane X = %v, want 114", secondX)
+	}
+
+	plainLeft := float32(100)
+	ttPlain := NewTester(func(c *Context) {
+		Split(c, &plainLeft, func() { Box(c).Fill() }, func() { Box(c).Fill() }).Fill()
+	}, 300, 100)
+	plainAllocs := testing.AllocsPerRun(20, func() { ttPlain.Frame() })
+	gapAllocs := testing.AllocsPerRun(20, func() { tt.Frame() })
+	if gapAllocs > plainAllocs {
+		t.Fatalf("SplitGap frame allocs = %v, want <= plain Split (%v)", gapAllocs, plainAllocs)
+	}
+
+	defer func() {
+		want := "ui: Key on a Split, whose state was initialized: use Context.Key before construction"
+		if r := recover(); r != want {
+			t.Fatalf("Split(...).SplitGap(8).Key recovered %v, want %q", r, want)
+		}
+	}()
+	NewTester(func(c *Context) {
+		Split(c, &left, func() {}, func() {}).SplitGap(8).Key("late")
+	}, 300, 100)
+}

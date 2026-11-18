@@ -83,6 +83,16 @@ type splitGapSettings struct {
 	nowSet, shownSet bool
 }
 
+// splitBuild holds the divider and handle built for a Split in the current
+// pass so SplitGap can size them in the same pass without positional walking
+// or an extra rebuild pass.
+type splitBuild struct {
+	split, div, handle   *node
+	size                 *float32
+	total, minPane, grip float32
+	vertical, inPercent  bool
+}
+
 // SplitGap spaces the two panes of a Split apart by v DIPs without drawing
 // the 1 DIP divider line between them, as two cards side by side or panes
 // that draw their own edges: SplitGap(0) puts them flush with no line, and
@@ -98,8 +108,31 @@ func (e *node) SplitGap(v float32) *node {
 	}
 	s := coreLocal(e, splitGapKey{}, func() splitGapSettings { return splitGapSettings{} })
 	s.now, s.nowSet = v, true
-	if !s.shownSet || s.shown != v {
-		e.c.rt.consumed = true
+	for i := len(e.c.splits) - 1; i >= 0; i-- {
+		sb := &e.c.splits[i]
+		if sb.split != e {
+			continue
+		}
+		sb.div.paintFn = nil
+		handleSize := max(sb.grip, v)
+		if sb.vertical {
+			sb.div.Height(v)
+			sb.handle.Top(-(handleSize - v) / 2).Height(handleSize)
+		} else {
+			sb.div.Width(v)
+			sb.handle.Start(-(handleSize - v) / 2).Width(handleSize)
+		}
+		shown := *sb.size
+		switch {
+		case sb.inPercent && sb.total > 0:
+			share := min(max(*sb.size, 0), 100) / 100
+			shown = fitSplit(share*(sb.total-v), sb.total, v, sb.minPane)
+		case !sb.inPercent && sb.total > 0 && *sb.size > sb.minPane:
+			shown = fitSplit(*sb.size, sb.total, v, sb.minPane)
+		}
+		sb.div.accRange[1] = float64(max(sb.total-v-sb.minPane, sb.minPane))
+		sb.div.accRange[2] = float64(shown)
+		break
 	}
 	return e
 }
@@ -151,22 +184,14 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 		reset.shown, reset.shownSet = reset.now, reset.nowSet
 		reset.now, reset.nowSet = 0, false
 	}
-	hasGap := false
 	gap := float32(1)
 	if gapCfg := splitGapOf(e); gapCfg != nil {
 		gapCfg.shown, gapCfg.shownSet = gapCfg.now, gapCfg.nowSet
 		gapCfg.now, gapCfg.nowSet = 0, false
 		if gapCfg.shownSet {
 			gap = gapCfg.shown
-			hasGap = true
-			c.onBuilt(func() {
-				if !gapCfg.nowSet {
-					e.c.rt.consumed = true
-				}
-			})
 		}
 	}
-	handleSize := max(grip, gap)
 	e.Children(func() {
 		// The panes meet at a line one DIP thick (unless SplitGap spaces
 		// them otherwise), with nothing between them and it. The handle the
@@ -237,7 +262,7 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 			div := coreBox(c).Shrink(0).Focusable().Role(RoleSplitter).Label(c.texts().Divider())
 			div.widget = "Divider"
 			div.flags |= flagOwnRing
-			length(div, gap)
+			length(div, 1)
 			// The arrows move the line the way they point.
 			back, forth := div.arrows()
 			if vertical {
@@ -267,10 +292,21 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 			handle.placeOn = div
 			handle.flags |= flagDraggable | flagHover
 			if vertical {
-				handle.Left(0).Right(0).Top(-(handleSize - gap) / 2).Height(handleSize).Cursor(CursorResizeNS)
+				handle.Left(0).Right(0).Top(-(grip - 1) / 2).Height(grip).Cursor(CursorResizeNS)
 			} else {
-				handle.Top(0).Bottom(0).Start(-(handleSize - gap) / 2).Width(handleSize).Cursor(CursorResizeEW)
+				handle.Top(0).Bottom(0).Start(-(grip - 1) / 2).Width(grip).Cursor(CursorResizeEW)
 			}
+			c.splits = append(c.splits, splitBuild{
+				split:     e,
+				div:       div,
+				handle:    handle,
+				size:      size,
+				total:     total,
+				minPane:   minPane,
+				grip:      grip,
+				vertical:  vertical,
+				inPercent: inPercent,
+			})
 			// A press there focuses the line, as a press on it would. Only a
 			// move changes the size, so a press keeps *size for when there is
 			// room again. A double click restores the size SplitReset chose.
@@ -308,17 +344,15 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 				*o = want - fitSplit(want, total, gap, minPane)
 				set(want)
 			})
-			if !hasGap {
-				div.Draw(func(p *Painter, r Rect) {
-					line := t.Border
-					if held || handle.Hovered() {
-						line = t.Accent
-					}
-					p.Fill(r, line, 0)
-				})
-			}
+			div.Draw(func(p *Painter, r Rect) {
+				line := t.Border
+				if held || handle.Hovered() {
+					line = t.Accent
+				}
+				p.Fill(r, line, 0)
+			})
 			handle.Draw(func(p *Painter, r Rect) {
-				if hasGap && (held || handle.Hovered()) {
+				if div.paintFn == nil && (held || handle.Hovered()) {
 					line := Rect{r.X + (r.W-1)/2, r.Y, 1, r.H}
 					if vertical {
 						line = Rect{r.X, r.Y + (r.H-1)/2, r.W, 1}
