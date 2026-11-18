@@ -4618,6 +4618,7 @@ func (_handle Element) ContextMenu(build func(m *Menu)) Element {
 	}
 	_ctx := _node.c
 	_ = _ctx
+	_node.markStateRead()
 	return wrapElement(_node.ContextMenu(build))
 }
 
@@ -6559,6 +6560,7 @@ func (_handle Element) Menu(build func(m *Menu)) Element {
 	}
 	_ctx := _node.c
 	_ = _ctx
+	_node.markStateRead()
 	return wrapElement(_node.Menu(build))
 }
 
@@ -7111,6 +7113,7 @@ func (_handle Element) PopoverMenu(build func(m *Menu), options ...PopoverMenuOp
 	}
 	_ctx := _node.c
 	_ = _ctx
+	_node.markStateRead()
 	return wrapElement(_node.PopoverMenu(build, options...))
 }
 
@@ -7156,6 +7159,7 @@ func (_handle Element) PopoverMenuButton(build func(m *Menu), options ...Popover
 	}
 	_ctx := _node.c
 	_ = _ctx
+	_node.markStateRead()
 	return wrapElement(_node.PopoverMenuButton(build, options...))
 }
 
@@ -8198,6 +8202,7 @@ func (_handle Element) SplitReset(v float32) Element {
 	}
 	_ctx := _node.c
 	_ = _ctx
+	_node.markStateRead()
 	return wrapElement(_node.SplitReset(v))
 }
 

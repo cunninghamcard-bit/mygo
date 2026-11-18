@@ -833,11 +833,11 @@ func (rt *engine) runFrame() {
 			// window is gone at once, and the frame ends with the view.
 			return
 		}
-		rt.buildTooltips(&rt.c)
 		rt.buildToasts(&rt.c)
 		if d := rt.menu.drawn; d != nil && d.edit && rt.drawsMenus() {
 			menusInWindow.drawEditMenu(rt)
 		}
+		rt.buildTooltips(&rt.c)
 		if rt.overlayExits {
 			// Copies of the elements gone from the layer leave in it
 			// (animateExits), empty as it is otherwise: it lets the
@@ -849,6 +849,10 @@ func (rt *engine) runFrame() {
 		}
 		if rt.insp.open {
 			rt.buildInspector(&rt.c, appW, w, h)
+			rt.buildTooltips(&rt.c)
+			if ov := rt.c.overlay; ov != nil && ov.parent == nil {
+				rt.c.root.add(ov)
+			}
 		}
 		rt.applyAllInputs()
 		rt.runAfterBuild()

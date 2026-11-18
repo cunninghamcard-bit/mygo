@@ -394,18 +394,12 @@ var inputQueries = map[string]bool{
 }
 
 var skipStateMark = map[string]bool{
-	"node.hasState":          true,
-	"node.disabled":          true,
-	"node.IsDisabled":        true,
-	"node.Key":               true,
-	"node.Children":          true,
-	"node.Tooltip":           true,
-	"node.ContextMenu":       true,
-	"node.Menu":              true,
-	"node.PopoverMenu":       true,
-	"node.PopoverMenuButton": true,
-	"node.SplitReset":        true,
-	"node.SplitGap":          true,
+	"node.hasState":   true,
+	"node.disabled":   true,
+	"node.IsDisabled": true,
+	"node.Key":        true,
+	"node.Children":   true,
+	"node.Tooltip":    true,
 }
 
 // computeStateReaders finds node methods and node-taking helpers whose build-time

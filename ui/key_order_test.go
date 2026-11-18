@@ -94,6 +94,30 @@ func TestKeyAfterStatePanicsInTester(t *testing.T) {
 				b.Key("k")
 			},
 		},
+		{
+			"ContextMenu",
+			func(c *Context) {
+				Box(c).Size(40, 40).ContextMenu(func(m *Menu) { m.Item("Run") }).Key("k")
+			},
+		},
+		{
+			"PopoverMenu",
+			func(c *Context) {
+				Box(c).Size(40, 40).PopoverMenu(func(m *Menu) { m.Item("Run") }).Key("k")
+			},
+		},
+		{
+			"Menu",
+			func(c *Context) {
+				Button(c, "More").Menu(func(m *Menu) { m.Item("Run") }).Key("k")
+			},
+		},
+		{
+			"PopoverMenuButton",
+			func(c *Context) {
+				Button(c, "More").PopoverMenuButton(func(m *Menu) { m.Item("Run") }).Key("k")
+			},
+		},
 	}
 	const want = "after the element's state was read"
 	for _, tc := range cases {
@@ -145,13 +169,14 @@ func TestLateKeyLogsOnceOutsideTester(t *testing.T) {
 }
 
 // TestKeyAfterChildrenAndModifiersWorks checks that Children, pure modifiers,
-// Button(c, label).Key, Tooltip(...).Key, and ContextMenu(...).Key neither
-// panic nor warn, and that buttons, tooltips, and context menus still work.
+// Button(c, label).Key, and Tooltip(...).Key neither panic nor warn, and that
+// buttons, tooltips (including inspector tooltips), and menus chained after Key work.
 func TestKeyAfterChildrenAndModifiersWorks(t *testing.T) {
 	clicks := 0
 	tipClicks := 0
-	ctxClicks := 0
 	menuPicked := 0
+	popPicked := 0
+	btnMenuPicked := 0
 
 	tt := NewTester(func(c *Context) {
 		Column(c).Padding(80, 40).Gap(16).Key("col").Children(func() {
@@ -169,31 +194,25 @@ func TestKeyAfterChildrenAndModifiersWorks(t *testing.T) {
 				tipClicks++
 			}
 
-			Box(c).Label("ctx-after").Size(80, 32).ContextMenu(func(m *Menu) {
-				m.Item("Ignore")
-			}).Key("ctx-after")
-
-			Box(c).Label("pop-after").Size(80, 32).PopoverMenu(func(m *Menu) {
-				m.Item("Ignore")
-			}).Key("pop-after")
-
-			Button(c, "MenuBtn").Menu(func(m *Menu) {
-				m.Item("Ignore")
-			}).Key("menu-after")
-
-			if Button(c, "SaveCtx").ContextMenu(func(m *Menu) {
-				m.Item("Extra")
-			}).Key("save-ctx").Clicked() {
-				ctxClicks++
-			}
-
-			Box(c).Label("ctx-before").Size(80, 32).Key("ctx-before").ContextMenu(func(m *Menu) {
+			Box(c).Label("ctx-keyed").Size(80, 32).Key("ctx-keyed").ContextMenu(func(m *Menu) {
 				if m.Item("Run").Chosen() {
 					menuPicked++
 				}
 			})
+
+			Box(c).Label("pop-keyed").Size(80, 32).Key("pop-keyed").PopoverMenu(func(m *Menu) {
+				if m.Item("PopRun").Chosen() {
+					popPicked++
+				}
+			})
+
+			Button(c, "MenuBtn").Key("menu-keyed").Menu(func(m *Menu) {
+				if m.Item("BtnRun").Chosen() {
+					btnMenuPicked++
+				}
+			})
 		})
-	}, 400, 500)
+	}, 800, 600)
 
 	if len(tt.rt.warnings) != 0 {
 		t.Fatalf("unexpected warnings: %q", tt.rt.warnings)
@@ -211,13 +230,6 @@ func TestKeyAfterChildrenAndModifiersWorks(t *testing.T) {
 	}
 	if tipClicks != 1 {
 		t.Fatalf("tipClicks = %d, want 1", tipClicks)
-	}
-
-	if err := tt.Click("SaveCtx"); err != nil {
-		t.Fatal(err)
-	}
-	if ctxClicks != 1 {
-		t.Fatalf("ctxClicks = %d, want 1", ctxClicks)
 	}
 
 	// Hover the keyed box whose Tooltip was chained before Key.
@@ -242,10 +254,10 @@ func TestKeyAfterChildrenAndModifiersWorks(t *testing.T) {
 		t.Fatalf("Button(c, ...).Tooltip(...).Key(...) did not show tooltip; texts %q", tt.Texts())
 	}
 
-	// Context menu on a keyed element opens and delivers its item choice.
-	ctxRect, ok := tt.Find("ctx-before")
+	// ContextMenu, PopoverMenu, and Menu chained after Key open and deliver choices.
+	ctxRect, ok := tt.Find("ctx-keyed")
 	if !ok {
-		t.Fatal("ctx-before not found")
+		t.Fatal("ctx-keyed not found")
 	}
 	tt.RightClickAt(ctxRect.X+ctxRect.W/2, ctxRect.Y+ctxRect.H/2)
 	if got := tt.Menu(); len(got) != 1 || got[0] != "Run" {
@@ -256,6 +268,41 @@ func TestKeyAfterChildrenAndModifiersWorks(t *testing.T) {
 	}
 	if menuPicked != 1 {
 		t.Fatalf("menuPicked = %d, want 1", menuPicked)
+	}
+
+	popRect, ok := tt.Find("pop-keyed")
+	if !ok {
+		t.Fatal("pop-keyed not found")
+	}
+	tt.RightClickAt(popRect.X+popRect.W/2, popRect.Y+popRect.H/2)
+	if err := tt.Click("PopRun"); err != nil {
+		t.Fatal(err)
+	}
+	if popPicked != 1 {
+		t.Fatalf("popPicked = %d, want 1", popPicked)
+	}
+
+	if err := tt.Click("MenuBtn"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("BtnRun"); err != nil {
+		t.Fatal(err)
+	}
+	if btnMenuPicked != 1 {
+		t.Fatalf("btnMenuPicked = %d, want 1", btnMenuPicked)
+	}
+
+	// Inspector tooltips still display when the inspector is open.
+	tt.rt.insp.open = true
+	tt.Frame()
+	rtlRect, ok := tt.Find("RTL")
+	if !ok {
+		t.Fatal("inspector RTL button not found")
+	}
+	tt.Move(rtlRect.X+rtlRect.W/2, rtlRect.Y+rtlRect.H/2)
+	tt.Advance(time.Second)
+	if !tt.HasText("Lay the window out right to left") {
+		t.Fatalf("inspector tooltip did not show; texts %q", tt.Texts())
 	}
 
 	if len(tt.rt.warnings) != 0 {
