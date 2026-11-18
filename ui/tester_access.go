@@ -172,12 +172,8 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 	// The roles elements were given, by their IDs: several may share a
 	// node's role, as a list box and a list do.
 	given := map[uint64]Role{}
-	handles := map[uint64]uint64{}
 	var walk func(e *node)
 	walk = func(e *node) {
-		if e.placeOn != nil && e.placeOn.widget == "Divider" {
-			handles[e.placeOn.id] = e.id
-		}
 		if e.role > RoleNone {
 			// But for a List's rows in a table or a grid, which are seen
 			// as its rows. Roles the node's roles do not follow in order,
@@ -204,11 +200,7 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 		}
 		info := func() AccessInfo {
 			a := accessInfoOf(r, n, tree.Focus)
-			id := n.ID
-			if h, ok := handles[id]; ok {
-				id = h
-			}
-			if s := t.rt.states[id]; s != nil {
+			if s := t.rt.states[n.ID]; s != nil {
 				a.Bounds = t.rt.windowRect(Rect{s.vx, s.vy, s.vw, s.vh})
 			} else {
 				a.Bounds = t.rt.clippedAccessBounds(tree, n, a.Bounds)
@@ -266,20 +258,7 @@ func (rt *engine) accessClip(s *state) Rect {
 	if s.selfClips {
 		clip = intersect(clip, transformRect(s.world, s.selfClip))
 	}
-	if !s.lifted {
-		for p := rt.states[s.parent]; p != nil; p = rt.states[p.parent] {
-			if p.clips {
-				clip = intersect(clip, transformRect(p.world, p.clipRect))
-			}
-			if p.selfClips {
-				clip = intersect(clip, transformRect(p.world, p.selfClip))
-			}
-			if p.lifted || p.parent == 0 {
-				break
-			}
-		}
-	}
-	return clip
+	return rt.clipAncestors(s, clip, [4]float32{})
 }
 
 // roleOfNode returns the Role of a node's role: those up to RoleTreeGrid
