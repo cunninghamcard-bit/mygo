@@ -36,7 +36,6 @@ type RefreshState struct {
 //		}()
 //	}
 func (e *node) PullToRefresh(s *RefreshState) bool {
-	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}

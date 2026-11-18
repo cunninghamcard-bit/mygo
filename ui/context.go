@@ -273,45 +273,23 @@ func (c *context) rekey(e *node, k any) {
 	}
 	id := keyedID(parent, k)
 	rt := c.rt
-	old := e.id
-	if id != old {
+	if e.stateRead {
+		rt.lateKey(id, k)
+	}
+	if id != e.id {
 		rt.unlook(e.st)
 	}
 	st, built := rt.lookState(id)
-	if built && id != old {
+	if built && id != e.id {
 		// Another element of the pass has the key under the same parent.
 		rt.duplicateKey(id, k)
 	}
 	e.id, e.st, e.key = id, st, k
-	if id != old && e.first != nil {
-		rekeyBuiltChildren(rt, e)
-	}
 	if rt.insp.open {
 		rt.insp.noteKey(id, k)
 		if id == rt.insp.selected {
 			rt.insp.noteSource()
 		}
-	}
-}
-
-// rekeyBuiltChildren updates the unkeyed decorative children a widget's
-// constructor built inside e, such as Button's label text, when e is keyed.
-func rekeyBuiltChildren(rt *engine, p *node) {
-	i := 0
-	for ch := p.first; ch != nil; ch = ch.next {
-		id := mix(p.id, uint64(i)+uint64(ch.kind)<<56)
-		if ch.key != nil {
-			id = keyedID(p.id, ch.key)
-		}
-		if id != ch.id {
-			rt.unlook(ch.st)
-			ch.id = id
-			ch.st, _ = rt.lookState(id)
-			if ch.first != nil {
-				rekeyBuiltChildren(rt, ch)
-			}
-		}
-		i++
 	}
 }
 
@@ -687,6 +665,7 @@ func (c *context) ShortcutRepeated() bool { return c.rt.shortcutRepeat }
 // closed, and Close's error is ignored. Keep a value the element must not
 // close, as one the app shares, in the app's state.
 func coreLocal[T any](e *node, key any, init func() T) *T {
+	e.markStateRead()
 	v, made := keepLocal(e.st, key, init)
 	if made {
 		closeWithState(e.st, v)

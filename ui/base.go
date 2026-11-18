@@ -654,7 +654,6 @@ func corePopoverBase(c *context, anchor *node, open *bool, fn func(panel *node))
 // presses outside it with modal, as a select's popup: a menu of the
 // system's takes them too.
 func popover(c *context, anchor *node, open *bool, modal bool, fn func(panel *node)) *node {
-	anchor.noteStateRead()
 	if !*open {
 		return nil
 	}

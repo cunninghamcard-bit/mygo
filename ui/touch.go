@@ -994,7 +994,6 @@ func (rt *engine) lowMemory() {
 // second since the last frame, on a touch screen. The press then clicks
 // nothing as it lifts.
 func (e *node) LongPressed() bool {
-	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}

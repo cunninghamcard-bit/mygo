@@ -340,6 +340,7 @@ type engine struct {
 	// it.
 	dirOverride uint8
 	dupKeys     map[uint64]bool
+	lateKeys    map[uint64]bool
 	warnings    []string
 	// strict makes mistakes found while building panic, as duplicate keys
 	// do in a Tester.
@@ -822,6 +823,8 @@ func (rt *engine) runFrame() {
 		}
 		rt.nextRegs = rt.nextRegs[:0]
 		clear(rt.kept)
+		clear(rt.tips.pending)
+		rt.tips.pending = rt.tips.pending[:0]
 		rt.stack.router = nil // the pass's Router tells
 		rt.c.reset(now, appW, rt.insp.contentHeight(w, h))
 		rt.view(&rt.c)
@@ -830,6 +833,7 @@ func (rt *engine) runFrame() {
 			// window is gone at once, and the frame ends with the view.
 			return
 		}
+		rt.buildTooltips(&rt.c)
 		rt.buildToasts(&rt.c)
 		if d := rt.menu.drawn; d != nil && d.edit && rt.drawsMenus() {
 			menusInWindow.drawEditMenu(rt)
@@ -1573,6 +1577,7 @@ func (rt *engine) dropFrame() {
 	clear(rt.states)
 	rt.free = nil
 	rt.hits, rt.liftHits = nil, nil
+	rt.tips.pending = nil
 	rt.journal = journal{}
 	if checkBuilt != nil {
 		checkBuilt(rt, builtDropped)

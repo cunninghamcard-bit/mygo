@@ -77,7 +77,6 @@ const (
 // on the screen, report none. Elements asking for them get a frame
 // whenever a finger lands, moves or lifts.
 func (e *node) Touches() []Touch {
-	e.noteStateRead()
 	if !e.hasState() || e.disabled() {
 		return nil
 	}

@@ -449,6 +449,9 @@ type node struct {
 	// inside it are unavailable, while they keep the focus, the pointer
 	// and their look (AccessDisabled).
 	accessDisabled bool
+	// stateRead tells that the build read or bound the element's state or
+	// identity before Key ran.
+	stateRead bool
 
 	// Painting.
 	bg          Color
@@ -539,11 +542,8 @@ type node struct {
 	// dismissed: Escape or a click outside closed the dialog or popover
 	// whose panel this is, in this frame (Dismissed).
 	dismissed bool
-	// stateRead and childrenBuilt mark an element whose state or ID was
-	// read or whose Children ran, which Key after would lose.
-	stateRead, childrenBuilt bool
-	rotate                   float32 // of an Icon, in degrees
-	label                    string
+	rotate    float32 // of an Icon, in degrees
+	label     string
 	// widget names the widget that used the element's state as it created
 	// it, which Key would then lose.
 	widget string
@@ -929,30 +929,23 @@ func (e *node) Children(fn func()) *node {
 	if e.kind == kindText && e.first != nil {
 		e.inlineText()
 	}
-	e.childrenBuilt = true
 	return e
 }
 
 // Key identifies the element among its siblings by k instead of by its
 // position, so that its state (focus, scrolling, text being edited, …)
 // follows it when the siblings before it change. Call it right after
-// creating the element, before Children or reading its state, or pass it
-// with Context.Key before construction. Widgets that handle their input as
-// they are created (Checkbox, Radio, Switch, Slider, Select, Link, List,
-// TextInput and TextArea) and elements whose Children ran or whose state
-// was already read cannot take a key afterward, and Key panics: use
-// Context.Key before construction instead. Siblings need keys of their
-// own: two elements with one key share one state, which MyGo logs, and a
-// Tester panics for.
+// creating the element, before reading its state, or pass it with
+// Context.Key before construction. Widgets that handle their input as they
+// are created (Checkbox, Radio, Switch, Slider, Select, Link, List,
+// TextInput and TextArea) cannot take a key, and Key panics: use
+// Context.Key before construction instead. Calling Key after the
+// element's state was read logs a warning in apps and panics in Tester.
+// Siblings need keys of their own: two elements with one key share one
+// state, which MyGo logs, and a Tester panics for.
 func (e *node) Key(k any) *node {
 	if e.widget != "" {
 		panic("ui: Key on a " + e.widget + ", whose state was initialized: use Context.Key before construction")
-	}
-	if e.childrenBuilt {
-		panic("ui: Key after Children: call Key before building children, or use Context.Key before construction")
-	}
-	if e.stateRead {
-		panic("ui: Key after the element's state was read: call Key before reading state, or use Context.Key before construction")
 	}
 	e.c.rekey(e, k)
 	return e
@@ -1374,7 +1367,6 @@ func (e *node) AttachTo(target *node, at, self Anchor) *node {
 // to another returns its Attach anchors, or AnchorTopLeft twice without
 // them.
 func (e *node) AttachedAnchors() (at, self Anchor) {
-	e.noteStateRead()
 	a := e.placed
 	if a == 0 && e.attach != 0 && e.hasState() && e.st.asked == e.attach {
 		a = e.st.placed
@@ -2086,10 +2078,10 @@ func (e *node) hasState() bool {
 	return e != nil && e.c != nil && e.c.rt != nil && e.st != nil && !e.c.rt.closed
 }
 
-// noteStateRead records that the build read or bound the element's state
-// or identity, so a later Key panics instead of losing it. Reads during
-// layout, commit or painting leave the built element untouched.
-func (e *node) noteStateRead() {
+// markStateRead records that the build read or bound the element's state
+// or identity, so a later Key reports it. Reads during painting or
+// journaling leave stateRead unset.
+func (e *node) markStateRead() {
 	if e != nil && e.c != nil && e.c.rt != nil && !e.c.rt.journal.on && !e.c.rt.painting {
 		e.stateRead = true
 	}
@@ -2125,7 +2117,6 @@ func (e *node) DragWindow() *node { e.flags |= flagDragWindow; return e }
 // click there means to it, as a sidebar starting something new. The
 // handle still moves the window, which DoubleClicked would stop.
 func (e *node) WindowDoubleClicked() bool {
-	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -2238,14 +2229,13 @@ func (e *node) DrawObjects(fn func(p *Painter, at int, r Rect)) *node {
 }
 
 // ID returns the element's identity, stable from frame to frame.
-func (e *node) ID() uint64 { e.noteStateRead(); return e.id }
+func (e *node) ID() uint64 { return e.id }
 
 // Bounds returns the previous frame's transformed bounding rectangle in
 // window DIPs, the content's when zoomed (Context.SetZoom); it is empty
 // for an element the previous frame lacked.
 // LayoutBounds returns its box before visual transforms.
 func (e *node) Bounds() Rect {
-	e.noteStateRead()
 	if !e.hasState() {
 		return Rect{}
 	}

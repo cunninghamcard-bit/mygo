@@ -99,7 +99,6 @@ func (e *node) Menu(build func(m *Menu)) *node {
 // in the window (PopoverMenu, PopoverMenuButton) only opens here, or
 // closes as its button is pressed again: drawMenu builds it.
 func (e *node) buildMenu(button, drawn bool, build func(m *Menu)) {
-	e.noteStateRead()
 	rt := e.c.rt
 	mr := &rt.menu
 	switch {

@@ -356,7 +356,6 @@ func transformRect(m scene.Affine, r Rect) Rect {
 // LayoutBounds returns the previous frame's border box before transforms,
 // in the layout's window coordinates. Draw callbacks use these coordinates.
 func (e *node) LayoutBounds() Rect {
-	e.noteStateRead()
 	if !e.hasState() {
 		return Rect{}
 	}
@@ -366,7 +365,6 @@ func (e *node) LayoutBounds() Rect {
 
 // LocalToWindow maps a point in the previous frame's border box to the window.
 func (e *node) LocalToWindow(x, y float32) (float32, float32) {
-	e.noteStateRead()
 	if !e.hasState() {
 		return 0, 0
 	}
@@ -376,7 +374,6 @@ func (e *node) LocalToWindow(x, y float32) (float32, float32) {
 // WindowToLocal maps a window point into the previous frame's border box.
 // ok is false for singular transforms, which take no pointer input.
 func (e *node) WindowToLocal(x, y float32) (lx, ly float32, ok bool) {
-	e.noteStateRead()
 	if !e.hasState() {
 		return 0, 0, false
 	}

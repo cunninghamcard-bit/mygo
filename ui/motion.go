@@ -326,7 +326,6 @@ func solveSpring(x, v, m, k, c, dt float64) (float64, float64) {
 // channel returns the element's channel for key, made at value when
 // there is none, and whether it was.
 func (e *node) channel(key any, value float64) (*channel, bool) {
-	e.noteStateRead()
 	st := e.st
 	if st.motions == nil {
 		st.motions = map[any]*channel{}
@@ -442,7 +441,6 @@ func (e *node) Jump(key any, value float32) float32 {
 // Velocity returns how fast, in its units per second, the value animated
 // under key goes in this frame: zero for one at rest or unknown.
 func (e *node) Velocity(key any) float32 {
-	e.noteStateRead()
 	if !e.hasState() {
 		return 0
 	}
@@ -456,7 +454,6 @@ func (e *node) Velocity(key any) float32 {
 // Animate, Spring or Keyframes, rests at its target in this frame: true
 // for an unknown key.
 func (e *node) Settled(key any) bool {
-	e.noteStateRead()
 	if !e.hasState() {
 		return true
 	}
@@ -476,7 +473,6 @@ func (e *node) Settled(key any) bool {
 // its target in this frame, after moving there: true in that frame only,
 // for the view to go on, as by removing what faded out.
 func (e *node) Arrived(key any) bool {
-	e.noteStateRead()
 	if !e.hasState() {
 		return false
 	}
@@ -520,7 +516,6 @@ func (s *state) viewInputs() viewInputs {
 // when its inputs changed since, as scrolling does, so that what the view
 // shows follows at once, not at the next input.
 func (e *node) watchView() {
-	e.noteStateRead()
 	s := e.st
 	if s.view == nil {
 		s.view = &viewWatch{inputs: s.viewInputs()}
@@ -662,7 +657,6 @@ func (e *node) AnimateColor(key any, target Color, a Animation) Color {
 	if a.Duration == 0 {
 		a.Spring.physics()
 	}
-	e.noteStateRead()
 	if !e.hasState() {
 		return target
 	}
@@ -790,7 +784,6 @@ func (e *node) Keyframes(key any, frames []Keyframe, options ...KeyframeOptions)
 	if o.Repeat < RepeatForever || o.Delay < 0 || o.RepeatDelay < 0 {
 		panic("ui: keyframe Repeat must be RepeatForever or nonnegative, and Delay nonnegative")
 	}
-	e.noteStateRead()
 	if !e.hasState() {
 		return frames[0].Value
 	}
