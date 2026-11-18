@@ -169,6 +169,43 @@ func TestSplitGapZeroAndPercent(t *testing.T) {
 	if vSplit.Bounds.H != grip || vSplit.Bounds.Y != 60-grip/2 {
 		t.Fatalf("vertical SplitGap(0) splitter bounds = %v, want Y=%v H=%v", vSplit.Bounds, 60-grip/2, grip)
 	}
+
+	clipPct := float32(50)
+	ttClip := NewTester(func(c *Context) {
+		Box(c).Size(300, 80).Clip().Children(func() {
+			SplitPercent(c, &clipPct, func() {
+				Box(c).Fill()
+			}, func() {
+				Box(c).Fill()
+			}).SplitGap(0).Size(300, 200)
+		})
+	}, 300, 120)
+	clipSplit, ok := ttClip.AccessByRole(RoleSplitter, "")
+	if !ok {
+		t.Fatalf("clipped RoleSplitter not found")
+	}
+	if clipSplit.Offscreen || clipSplit.Bounds.W != grip || clipSplit.Bounds.H != 80 {
+		t.Fatalf("clipped SplitGap(0) splitter = %+v, want Offscreen=false W=%v H=80", clipSplit, grip)
+	}
+
+	offPct := float32(50)
+	ttOff := NewTester(func(c *Context) {
+		Scroll(c).Size(300, 80).Children(func() {
+			Box(c).Size(300, 120).Shrink(0)
+			SplitPercent(c, &offPct, func() {
+				Box(c).Fill()
+			}, func() {
+				Box(c).Fill()
+			}).SplitGap(0).Size(300, 100).Shrink(0)
+		})
+	}, 300, 120)
+	offSplit, ok := ttOff.AccessByRole(RoleSplitter, "")
+	if !ok {
+		t.Fatalf("offscreen RoleSplitter not found")
+	}
+	if !offSplit.Offscreen || offSplit.Bounds.H != 0 {
+		t.Fatalf("offscreen SplitGap(0) splitter = %+v, want Offscreen=true H=0", offSplit)
+	}
 }
 
 // SplitGap updates immediately when changed or removed on later frames.
