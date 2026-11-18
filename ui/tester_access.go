@@ -21,10 +21,8 @@ type AccessInfo struct {
 	RoleDescription string
 	// Bounds is the element's visible box, clipped by the scroll containers
 	// and clips around it, in the window's DIPs as Find's; W or H is 0 when
-	// none of it shows (Offscreen). UnclippedBounds is its transformed box
-	// before clipping, in the window's DIPs as the accessibility tree sends
-	// it to screen readers.
-	Bounds, UnclippedBounds Rect
+	// none of it shows (Offscreen).
+	Bounds Rect
 	// Checked is set on a check box, switch, radio button or menu item
 	// that is on, and on a toggle button pressed (aria-checked,
 	// aria-pressed); Mixed in its place on one partly on.
@@ -174,8 +172,12 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 	// The roles elements were given, by their IDs: several may share a
 	// node's role, as a list box and a list do.
 	given := map[uint64]Role{}
+	handles := map[uint64]uint64{}
 	var walk func(e *node)
 	walk = func(e *node) {
+		if e.placeOn != nil && e.placeOn.widget == "Divider" {
+			handles[e.placeOn.id] = e.id
+		}
 		if e.role > RoleNone {
 			// But for a List's rows in a table or a grid, which are seen
 			// as its rows. Roles the node's roles do not follow in order,
@@ -202,8 +204,14 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 		}
 		info := func() AccessInfo {
 			a := accessInfoOf(r, n, tree.Focus)
-			if s := t.rt.states[n.ID]; s != nil {
+			id := n.ID
+			if h, ok := handles[id]; ok {
+				id = h
+			}
+			if s := t.rt.states[id]; s != nil {
 				a.Bounds = t.rt.windowRect(Rect{s.vx, s.vy, s.vw, s.vh})
+			} else {
+				a.Bounds = t.rt.clippedAccessBounds(tree, n, a.Bounds)
 			}
 			names := func(ids []uint64) []string {
 				var out []string
@@ -226,6 +234,54 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 	}
 }
 
+// clippedAccessBounds clips a synthetic node's bounds (one without element
+// state of its own, such as AccessChildren or a web view's page node) to
+// the visible clip around it in the window's DIPs.
+func (rt *engine) clippedAccessBounds(tree *platform.AccessTree, n *platform.AccessNode, bounds Rect) Rect {
+	if n.WebView != nil {
+		if s := rt.states[n.ID^pageNodeID]; s != nil {
+			return intersect(bounds, rt.windowRect(rt.accessClip(s)))
+		}
+	}
+	for p := n.Parent; p >= 0 && p < len(tree.Nodes); p = tree.Nodes[p].Parent {
+		if s := rt.states[tree.Nodes[p].ID]; s != nil {
+			return intersect(bounds, rt.windowRect(rt.accessClip(s)))
+		}
+	}
+	w, h, _ := rt.size()
+	return intersect(bounds, rt.windowRect(Rect{0, 0, w, h}))
+}
+
+// accessClip returns the visible clip rectangle for s and its children in
+// content DIPs.
+func (rt *engine) accessClip(s *state) Rect {
+	if s.invisible {
+		return Rect{s.vx, s.vy, 0, 0}
+	}
+	w, h, _ := rt.size()
+	clip := Rect{0, 0, w, h}
+	if s.clips {
+		clip = intersect(clip, transformRect(s.world, s.clipRect))
+	}
+	if s.selfClips {
+		clip = intersect(clip, transformRect(s.world, s.selfClip))
+	}
+	if !s.lifted {
+		for p := rt.states[s.parent]; p != nil; p = rt.states[p.parent] {
+			if p.clips {
+				clip = intersect(clip, transformRect(p.world, p.clipRect))
+			}
+			if p.selfClips {
+				clip = intersect(clip, transformRect(p.world, p.selfClip))
+			}
+			if p.lifted || p.parent == 0 {
+				break
+			}
+		}
+	}
+	return clip
+}
+
 // roleOfNode returns the Role of a node's role: those up to RoleTreeGrid
 // follow RoleGroup in the same order, and those after it RoleOption, as
 // the node's roles have no list box nor option of their own.
@@ -240,7 +296,6 @@ func roleOfNode(r platform.AccessRole) Role {
 // whose focus is focus.
 func accessInfoOf(r Role, n *platform.AccessNode, focus uint64) AccessInfo {
 	s, b := n.States, n.Bounds
-	unclipped := Rect{float32(b.X), float32(b.Y), float32(b.W), float32(b.H)}
 	// The choice among tabs, a tree's items, the rows of a list and the
 	// cells of a grid is AccessChecked, which screen readers read as
 	// selected.
@@ -265,8 +320,7 @@ func accessInfoOf(r Role, n *platform.AccessNode, focus uint64) AccessInfo {
 		Description:     n.Description,
 		Placeholder:     n.Placeholder,
 		RoleDescription: n.RoleDescription,
-		Bounds:          unclipped,
-		UnclippedBounds: unclipped,
+		Bounds:          Rect{float32(b.X), float32(b.Y), float32(b.W), float32(b.H)},
 		Checked:         s&platform.AccessChecked != 0 && !chosen,
 		Mixed:           s&platform.AccessMixed != 0,
 		Expanded:        s&platform.AccessExpanded != 0,
