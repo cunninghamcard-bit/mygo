@@ -7,6 +7,8 @@ package ui
 // gives way, keeping *size for when there is room again. Changed reports a
 // move. Right to left (Direction), first is on the right. SplitReset makes
 // a double click on the divider put first back at a size the app chooses.
+// SplitGap spaces the panes apart by a number of DIPs without drawing the
+// 1 DIP divider line, including 0 for flush panes.
 //
 //	ui.Split(c, &app.sidebar, app.files, app.editor).Fill()
 func coreSplit(c *context, size *float32, first, second func()) *node {
@@ -91,26 +93,13 @@ func (e *node) SplitGap(v float32) *node {
 	if e.widget != "Split" {
 		return e
 	}
-	v = max(v, 0)
+	if !(v > 0) {
+		v = 0
+	}
 	s := coreLocal(e, splitGapKey{}, func() splitGapSettings { return splitGapSettings{} })
 	s.now, s.nowSet = v, true
-	in := e.first
-	if in == nil || in.first == nil || in.first.next == nil {
-		return e
-	}
-	div := in.first.next
-	div.paintFn = nil
-	grip := max(e.theme().Space(1.5), v)
-	if !in.row {
-		div.Height(v)
-		if handle := div.next.next; handle != nil {
-			handle.Top(-(grip - v) / 2).Height(grip)
-		}
-	} else {
-		div.Width(v)
-		if handle := div.next.next; handle != nil {
-			handle.Start(-(grip - v) / 2).Width(grip)
-		}
+	if !s.shownSet || s.shown != v {
+		e.c.rt.consumed = true
 	}
 	return e
 }
@@ -162,14 +151,22 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 		reset.shown, reset.shownSet = reset.now, reset.nowSet
 		reset.now, reset.nowSet = 0, false
 	}
+	hasGap := false
 	gap := float32(1)
 	if gapCfg := splitGapOf(e); gapCfg != nil {
 		gapCfg.shown, gapCfg.shownSet = gapCfg.now, gapCfg.nowSet
 		gapCfg.now, gapCfg.nowSet = 0, false
 		if gapCfg.shownSet {
 			gap = gapCfg.shown
+			hasGap = true
+			c.onBuilt(func() {
+				if !gapCfg.nowSet {
+					e.c.rt.consumed = true
+				}
+			})
 		}
 	}
+	handleSize := max(grip, gap)
 	e.Children(func() {
 		// The panes meet at a line one DIP thick (unless SplitGap spaces
 		// them otherwise), with nothing between them and it. The handle the
@@ -240,7 +237,7 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 			div := coreBox(c).Shrink(0).Focusable().Role(RoleSplitter).Label(c.texts().Divider())
 			div.widget = "Divider"
 			div.flags |= flagOwnRing
-			length(div, 1)
+			length(div, gap)
 			// The arrows move the line the way they point.
 			back, forth := div.arrows()
 			if vertical {
@@ -270,9 +267,9 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 			handle.placeOn = div
 			handle.flags |= flagDraggable | flagHover
 			if vertical {
-				handle.Left(0).Right(0).Top(-(grip - 1) / 2).Height(grip).Cursor(CursorResizeNS)
+				handle.Left(0).Right(0).Top(-(handleSize - gap) / 2).Height(handleSize).Cursor(CursorResizeNS)
 			} else {
-				handle.Top(0).Bottom(0).Start(-(grip - 1) / 2).Width(grip).Cursor(CursorResizeEW)
+				handle.Top(0).Bottom(0).Start(-(handleSize - gap) / 2).Width(handleSize).Cursor(CursorResizeEW)
 			}
 			// A press there focuses the line, as a press on it would. Only a
 			// move changes the size, so a press keeps *size for when there is
@@ -311,14 +308,23 @@ func split(c *context, size *float32, first, second func(), vertical, inPercent 
 				*o = want - fitSplit(want, total, gap, minPane)
 				set(want)
 			})
-			div.Draw(func(p *Painter, r Rect) {
-				line := t.Border
-				if held || handle.Hovered() {
-					line = t.Accent
-				}
-				p.Fill(r, line, 0)
-			})
+			if !hasGap {
+				div.Draw(func(p *Painter, r Rect) {
+					line := t.Border
+					if held || handle.Hovered() {
+						line = t.Accent
+					}
+					p.Fill(r, line, 0)
+				})
+			}
 			handle.Draw(func(p *Painter, r Rect) {
+				if hasGap && (held || handle.Hovered()) {
+					line := Rect{r.X + (r.W-1)/2, r.Y, 1, r.H}
+					if vertical {
+						line = Rect{r.X, r.Y + (r.H-1)/2, r.W, 1}
+					}
+					p.Fill(line, t.Accent, 0)
+				}
 				if div.FocusVisible() {
 					p.focusRingOf(div, r, [4]float32{})
 				}

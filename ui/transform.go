@@ -498,6 +498,14 @@ func roundedContains(r Rect, radii [4]float32, x, y float32) bool {
 }
 
 func accessBounds(e *node) platform.RectF {
+	if e.widget == "Divider" && e.parent != nil {
+		for ch := e.parent.first; ch != nil; ch = ch.next {
+			if ch.placeOn == e {
+				e = ch
+				break
+			}
+		}
+	}
 	r := e.visualRect(Rect{e.x, e.y, e.w, e.h})
 	return platform.RectF{X: float64(r.X), Y: float64(r.Y), W: float64(r.W), H: float64(r.H)}
 }

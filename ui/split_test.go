@@ -5,14 +5,22 @@ import (
 	"testing"
 )
 
-// SplitGap spaces the panes by gap DIPs from the first frame, paints no
-// divider line over the background, and resizes across the gap by pointer
-// drag, keyboard arrows and SplitReset, in DIPs and percentages.
+func rgbaOf(c Color) color.RGBA {
+	return color.RGBA{c.R, c.G, c.B, c.A}
+}
+
+// SplitGap spaces the panes by gap DIPs from the first frame, omits the
+// resting divider line, keeps the accent highlight on hover and drag, and
+// resizes across the gap by pointer drag, keyboard arrows and SplitReset.
 func TestSplitGap(t *testing.T) {
 	bg := RGB(250, 248, 242)
+	accent := LightTheme().Accent
 	left := float32(100)
 	var a, b Rect
 	tt := NewTester(func(c *Context) {
+		t := LightTheme()
+		t.Background = bg
+		c.SetTheme(t)
 		c.Root().Background(bg)
 		Split(c, &left, func() {
 			a = Box(c).Fill().Background(RGB(220, 230, 245)).Bounds()
@@ -24,21 +32,35 @@ func TestSplitGap(t *testing.T) {
 	if a != (Rect{0, 0, 100, 100}) || b != (Rect{108, 0, 192, 100}) {
 		t.Fatalf("panes at %v and %v, want {0 0 100 100} and {108 0 192 100}", a, b)
 	}
-	// Hovering the gap shows the resize cursor without painting a line.
+	// At rest there is no divider line in the gap.
+	if got := tt.Image().RGBAAt(104, 50); got != rgbaOf(bg) {
+		t.Fatalf("resting gap pixel = %v, want background %v", got, bg)
+	}
+	// Hovering the gap shows the resize cursor and the accent highlight.
 	tt.Move(104, 50)
 	if tt.Cursor() != CursorResizeEW {
 		t.Fatalf("cursor over gap = %v, want CursorResizeEW", tt.Cursor())
 	}
-	if got := tt.Image().RGBAAt(104, 50); got != (color.RGBA{bg.R, bg.G, bg.B, 255}) {
-		t.Fatalf("gap pixel = %v, want background %v", got, bg)
+	if got := tt.Image().RGBAAt(104, 50); got != rgbaOf(accent) {
+		t.Fatalf("hovered gap pixel = %v, want accent %v", got, accent)
 	}
-	// Dragging anywhere across the 8 DIP gap moves the split.
+	// Dragging anywhere across the 8 DIP gap moves the split and keeps the accent highlight.
 	tt.Press(107, 50)
 	tt.Move(137, 50)
+	if left != 130 {
+		t.Fatalf("during drag: left=%v, want 130", left)
+	}
+	if got := tt.Image().RGBAAt(134, 50); got != rgbaOf(accent) {
+		t.Fatalf("dragged gap pixel = %v, want accent %v", got, accent)
+	}
 	tt.Release(137, 50)
+	tt.Move(10, 50)
 	tt.Frame()
-	if left != 130 || b.X != 138 || b.W != 162 {
+	if b.X != 138 || b.W != 162 {
 		t.Fatalf("after drag: left=%v, second=%v", left, b)
+	}
+	if got := tt.Image().RGBAAt(134, 50); got != rgbaOf(bg) {
+		t.Fatalf("after drag release, gap pixel = %v, want background %v", got, bg)
 	}
 	// Keyboard arrows and double-click SplitReset respect the gap.
 	tt.Key(0, KeyRight)
@@ -54,10 +76,16 @@ func TestSplitGap(t *testing.T) {
 	}
 }
 
-// SplitGap(0) puts the panes flush with no 1 DIP line, and SplitPercent
-// and SplitVertical share the room left after the gap.
+// SplitGap(0) puts the panes flush with no resting line while keeping the
+// hover/drag accent highlight above both panes and a grip-sized accessible box
+// on both horizontal and vertical splits; SplitPercent and SplitVertical share
+// the room left after the gap.
 func TestSplitGapZeroAndPercent(t *testing.T) {
 	bg := RGB(255, 255, 255)
+	paneA := RGB(220, 230, 245)
+	paneB := RGB(230, 245, 225)
+	accent := LightTheme().Accent
+	grip := LightTheme().Space(1.5)
 	pct := float32(50)
 	top := float32(40)
 	var a, b, va, vb Rect
@@ -67,9 +95,9 @@ func TestSplitGapZeroAndPercent(t *testing.T) {
 		c.SetTheme(t)
 		Column(c).Fill().Children(func() {
 			SplitPercent(c, &pct, func() {
-				a = Box(c).Fill().Bounds()
+				a = Box(c).Fill().Background(paneA).Bounds()
 			}, func() {
-				b = Box(c).Fill().Bounds()
+				b = Box(c).Fill().Background(paneB).Bounds()
 			}).SplitGap(0).Height(40).FillWidth()
 			SplitVertical(c, &top, func() {
 				va = Box(c).Fill().Bounds()
@@ -82,10 +110,106 @@ func TestSplitGapZeroAndPercent(t *testing.T) {
 	if a != (Rect{0, 0, 100, 40}) || b != (Rect{100, 0, 100, 40}) {
 		t.Fatalf("SplitGap(0) percent panes: %v and %v", a, b)
 	}
-	if got := tt.Image().RGBAAt(100, 20); got != (color.RGBA{255, 255, 255, 255}) {
-		t.Fatalf("SplitGap(0) painted %v at seam x=100", got)
+	if got := tt.Image().RGBAAt(100, 20); got != rgbaOf(paneB) {
+		t.Fatalf("SplitGap(0) resting seam = %v, want paneB %v", got, paneB)
+	}
+	tt.Move(100, 20)
+	if got := tt.Image().RGBAAt(100, 20); got != rgbaOf(accent) {
+		t.Fatalf("SplitGap(0) hovered seam = %v, want accent %v", got, accent)
+	}
+	tt.Press(100, 20)
+	tt.Move(120, 20)
+	if got := tt.Image().RGBAAt(120, 20); got != rgbaOf(accent) {
+		t.Fatalf("SplitGap(0) dragged seam = %v, want accent %v", got, accent)
+	}
+	tt.Release(120, 20)
+	tt.Move(10, 20)
+	if got := tt.Image().RGBAAt(120, 20); got != rgbaOf(paneB) {
+		t.Fatalf("SplitGap(0) after release = %v, want paneB %v", got, paneB)
 	}
 	if va != (Rect{0, 40, 200, 40}) || vb != (Rect{0, 90, 200, 70}) {
 		t.Fatalf("SplitVertical SplitGap(10) panes: %v and %v", va, vb)
+	}
+
+	// Vertical SplitGap(0) and accessible bounds for both horizontal and vertical splits.
+	top = 60
+	ttV := NewTester(func(c *Context) {
+		t := LightTheme()
+		t.Background = bg
+		c.SetTheme(t)
+		SplitVertical(c, &top, func() {
+			Box(c).Fill().Background(paneA)
+		}, func() {
+			Box(c).Fill().Background(paneB)
+		}).SplitGap(0).Fill()
+	}, 200, 160)
+	ttV.Frame()
+	if got := ttV.Image().RGBAAt(100, 60); got != rgbaOf(paneB) {
+		t.Fatalf("vertical SplitGap(0) resting seam = %v, want paneB %v", got, paneB)
+	}
+	ttV.Move(100, 60)
+	if ttV.Cursor() != CursorResizeNS {
+		t.Fatalf("vertical SplitGap(0) cursor = %v, want CursorResizeNS", ttV.Cursor())
+	}
+	if got := ttV.Image().RGBAAt(100, 60); got != rgbaOf(accent) {
+		t.Fatalf("vertical SplitGap(0) hovered seam = %v, want accent %v", got, accent)
+	}
+
+	hSplit, ok := tt.AccessByRole(RoleSplitter, "")
+	if !ok {
+		t.Fatalf("horizontal RoleSplitter not found")
+	}
+	if hSplit.Bounds.W != grip || hSplit.Bounds.X < 120-grip/2-0.01 || hSplit.Bounds.X > 120-grip/2+0.01 {
+		t.Fatalf("horizontal SplitGap(0) splitter bounds = %v, want X=%v W=%v", hSplit.Bounds, 120-grip/2, grip)
+	}
+	vSplit, ok := ttV.AccessByRole(RoleSplitter, "")
+	if !ok {
+		t.Fatalf("vertical RoleSplitter not found")
+	}
+	if vSplit.Bounds.H != grip || vSplit.Bounds.Y != 60-grip/2 {
+		t.Fatalf("vertical SplitGap(0) splitter bounds = %v, want Y=%v H=%v", vSplit.Bounds, 60-grip/2, grip)
+	}
+}
+
+// SplitGap updates immediately when changed or removed on later frames.
+func TestSplitGapDynamic(t *testing.T) {
+	bg := RGB(255, 255, 255)
+	paneB := RGB(230, 245, 225)
+	left := float32(100)
+	useGap := true
+	gap := float32(8)
+	tt := NewTester(func(c *Context) {
+		t := LightTheme()
+		t.Background = bg
+		c.SetTheme(t)
+		s := Split(c, &left, func() {
+			Box(c).Fill()
+		}, func() {
+			Box(c).Fill().Background(paneB)
+		})
+		if useGap {
+			s.SplitGap(gap)
+		}
+		s.Fill()
+	}, 300, 100)
+	tt.Frame()
+	if got := tt.Image().RGBAAt(108, 50); got != rgbaOf(paneB) {
+		t.Fatalf("frame 1 at x=108: %v, want paneB %v", got, paneB)
+	}
+	gap = 16
+	tt.Frame()
+	if got := tt.Image().RGBAAt(115, 50); got != rgbaOf(bg) {
+		t.Fatalf("after changing SplitGap to 16, pixel x=115 = %v, want bg %v", got, bg)
+	}
+	if got := tt.Image().RGBAAt(116, 50); got != rgbaOf(paneB) {
+		t.Fatalf("after changing SplitGap to 16, pixel x=116 = %v, want paneB %v", got, paneB)
+	}
+	useGap = false
+	tt.Frame()
+	if got := tt.Image().RGBAAt(100, 50); got != rgbaOf(LightTheme().Border) {
+		t.Fatalf("after omitting SplitGap, divider pixel = %v, want Border %v", got, LightTheme().Border)
+	}
+	if got := tt.Image().RGBAAt(101, 50); got != rgbaOf(paneB) {
+		t.Fatalf("after omitting SplitGap, second pane x=101 = %v, want paneB %v", got, paneB)
 	}
 }
