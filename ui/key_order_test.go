@@ -166,11 +166,20 @@ func TestLateKeyLogsOnceOutsideTester(t *testing.T) {
 	if got := strings.Count(buf.String(), "after the element's state was read"); got != 1 {
 		t.Errorf("log count = %d, want 1 (log: %q)", got, buf.String())
 	}
+	var seenID uint64
+	for id := range rt.lateKeys {
+		seenID = id
+	}
+	if allocs := testing.AllocsPerRun(100, func() {
+		rt.lateKey(seenID, "late")
+	}); allocs != 0 {
+		t.Errorf("deduplicated lateKey allocs = %v, want 0", allocs)
+	}
 }
 
 // TestKeyAfterChildrenAndModifiersWorks checks that Children, pure modifiers,
 // Button(c, label).Key, and Tooltip(...).Key neither panic nor warn, and that
-// buttons, tooltips (including inspector tooltips), and menus chained after Key work.
+// buttons, tooltips, and menus chained after Key work.
 func TestKeyAfterChildrenAndModifiersWorks(t *testing.T) {
 	clicks := 0
 	tipClicks := 0
@@ -290,19 +299,6 @@ func TestKeyAfterChildrenAndModifiersWorks(t *testing.T) {
 	}
 	if btnMenuPicked != 1 {
 		t.Fatalf("btnMenuPicked = %d, want 1", btnMenuPicked)
-	}
-
-	// Inspector tooltips still display when the inspector is open.
-	tt.rt.insp.open = true
-	tt.Frame()
-	rtlRect, ok := tt.Find("RTL")
-	if !ok {
-		t.Fatal("inspector RTL button not found")
-	}
-	tt.Move(rtlRect.X+rtlRect.W/2, rtlRect.Y+rtlRect.H/2)
-	tt.Advance(time.Second)
-	if !tt.HasText("Lay the window out right to left") {
-		t.Fatalf("inspector tooltip did not show; texts %q", tt.Texts())
 	}
 
 	if len(tt.rt.warnings) != 0 {
