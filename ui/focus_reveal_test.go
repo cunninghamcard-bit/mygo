@@ -285,3 +285,109 @@ func TestFocusTwoOptionsPanic(t *testing.T) {
 		})
 	}
 }
+
+// Handle.SelectAll keeps the FocusOptions of a pending FocusWith request, in
+// either order and before or after Bind, and starts fresh in later frames.
+func TestHandleSelectAllAndFocusWithPreventScroll(t *testing.T) {
+	run := func(t *testing.T, beforeBind bool, setup func(h *ui.Handle)) {
+		t.Helper()
+		var s ui.ScrollState
+		var h ui.Handle
+		text := "token"
+		show := !beforeBind
+		focused := false
+		tt := ui.NewTester(func(c *ui.Context) {
+			ui.Scroll(c.Key("scroll")).Height(100).Width(200).TrackScroll(&s).Children(func() {
+				ui.Box(c.Key("space")).Height(300).Width(100).Shrink(0)
+				if show {
+					in := ui.TextInput(c.Key("in"), &text).Width(150).Bind(&h)
+					focused = in.Focused()
+				}
+			})
+		}, 400, 300)
+		tt.Frame()
+		if s.Y != 0 || focused {
+			t.Fatalf("at the start: offset %v, focused %v", s.Y, focused)
+		}
+		setup(&h)
+		show = true
+		tt.Frame()
+		tt.Frame()
+		if !focused {
+			t.Fatal("the text input did not get the focus")
+		}
+		if s.Y != 0 {
+			t.Errorf("PreventScroll scrolled to %v", s.Y)
+		}
+		tt.Type("x")
+		if text != "x" {
+			t.Errorf("typing after SelectAll gave %q, want %q", text, "x")
+		}
+	}
+
+	t.Run("FocusWithThenSelectAllBound", func(t *testing.T) {
+		run(t, false, func(h *ui.Handle) {
+			h.FocusWith(ui.FocusOptions{PreventScroll: true})
+			h.SelectAll()
+		})
+	})
+	t.Run("FocusWithThenSelectAllBeforeBind", func(t *testing.T) {
+		run(t, true, func(h *ui.Handle) {
+			h.FocusWith(ui.FocusOptions{PreventScroll: true})
+			h.SelectAll()
+		})
+	})
+	t.Run("SelectAllThenFocusWith", func(t *testing.T) {
+		run(t, false, func(h *ui.Handle) {
+			h.SelectAll()
+			h.FocusWith(ui.FocusOptions{PreventScroll: true})
+		})
+	})
+
+	t.Run("PlainSelectAllAfterCompletedFocusWith", func(t *testing.T) {
+		var s ui.ScrollState
+		var h ui.Handle
+		text := "token"
+		focusTop, focused := false, false
+		tt := ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Children(func() {
+				top := ui.Button(c.Key("top"), "Top")
+				if focusTop {
+					top.Focus()
+					focusTop = false
+				}
+				ui.Scroll(c.Key("scroll")).Height(100).Width(200).TrackScroll(&s).Children(func() {
+					ui.Box(c.Key("space")).Height(300).Width(100).Shrink(0)
+					in := ui.TextInput(c.Key("in"), &text).Width(150).Bind(&h)
+					focused = in.Focused()
+				})
+			})
+		}, 400, 300)
+		tt.Frame()
+		h.FocusWith(ui.FocusOptions{PreventScroll: true})
+		tt.Frame()
+		tt.Frame()
+		if !focused || s.Y != 0 {
+			t.Fatalf("after FocusWith: focused %v, offset %v", focused, s.Y)
+		}
+		focusTop = true
+		tt.Frame()
+		tt.Frame()
+		if focused || s.Y != 0 {
+			t.Fatalf("after moving focus to Top: focused %v, offset %v", focused, s.Y)
+		}
+		h.SelectAll()
+		tt.Frame()
+		tt.Frame()
+		if !focused {
+			t.Fatal("the text input did not get the focus on SelectAll")
+		}
+		if s.Y <= 0 {
+			t.Errorf("plain SelectAll after FocusWith kept offset at %v, want scrolled into view", s.Y)
+		}
+		tt.Type("x")
+		if text != "x" {
+			t.Errorf("typing after plain SelectAll gave %q, want %q", text, "x")
+		}
+	})
+}

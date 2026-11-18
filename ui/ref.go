@@ -60,22 +60,24 @@ func (r *Handle) binding(rt *engine, create bool) *refState {
 // Focus requests focus, waiting while the control is hidden. Supply a Context
 // to select a window. Without one, a handle must have at most one open window.
 // A request made before its first binding waits for that binding.
-func (r *Handle) Focus(window ...*Context) { r.focus("Focus", false, FocusOptions{}, window) }
+func (r *Handle) Focus(window ...*Context) { r.focus("Focus", false, false, FocusOptions{}, window) }
 
 // FocusWith requests focus with options, as Focus does: PreventScroll keeps
 // the scroll containers around the control where they are when it takes the
 // focus, as Element.Focus(options) does.
 func (r *Handle) FocusWith(options FocusOptions, window ...*Context) {
-	r.focus("FocusWith", false, options, window)
+	r.focus("FocusWith", false, false, options, window)
 }
 
 // SelectAll requests focus as Focus does, and selects all of the text of the
 // text input or area, as Tab into it does: a find box opened again selects
 // its query, and typing replaces it. It selects even when the control has
-// the focus already.
-func (r *Handle) SelectAll(window ...*Context) { r.focus("SelectAll", true, FocusOptions{}, window) }
+// the focus already, and keeps the options of a pending FocusWith request.
+func (r *Handle) SelectAll(window ...*Context) {
+	r.focus("SelectAll", true, true, FocusOptions{}, window)
+}
 
-func (r *Handle) focus(name string, selectAll bool, options FocusOptions, window []*Context) {
+func (r *Handle) focus(name string, selectAll, keepOptions bool, options FocusOptions, window []*Context) {
 	if r == nil {
 		return
 	}
@@ -97,16 +99,20 @@ func (r *Handle) focus(name string, selectAll bool, options FocusOptions, window
 			b = candidate
 		}
 		if b == nil {
+			if !keepOptions || !s.pending {
+				s.options = options
+			}
 			s.pending = true
 			s.pendingSelect = s.pendingSelect || selectAll
-			s.options = options
 			return
 		}
 	}
 	if b != nil && !b.closed {
+		if !keepOptions || !b.requested {
+			b.options = options
+		}
 		b.requested = true
 		b.selectAll = b.selectAll || selectAll
-		b.options = options
 		if rt := b.window.runtime(); rt != nil {
 			rt.requestFrame()
 		}
