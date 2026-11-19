@@ -3,6 +3,8 @@ package ui
 import (
 	"image/color"
 	"testing"
+
+	"github.com/egoist/mygo/internal/platform"
 )
 
 func rgbaOf(c Color) color.RGBA {
@@ -168,6 +170,38 @@ func TestSplitGapZeroAndPercent(t *testing.T) {
 	}
 	if vSplit.Bounds.H != grip || vSplit.Bounds.Y != 60-grip/2 {
 		t.Fatalf("vertical SplitGap(0) splitter bounds = %v, want Y=%v H=%v", vSplit.Bounds, 60-grip/2, grip)
+	}
+
+	// Platform-side accessBounds (before Tester overwrites Bounds from state)
+	// also reports the grip-sized handle box on the RoleSplitter node.
+	tt.rt.access = true
+	tt.Frame()
+	foundPlatformH := false
+	for _, n := range tt.rt.accessTree().Nodes {
+		if n.Role == platform.RoleSplitter {
+			foundPlatformH = true
+			if n.Bounds.W != float64(grip) || n.Bounds.H != 40 {
+				t.Fatalf("platform horizontal SplitGap(0) splitter Bounds = %+v, want W=%v H=40", n.Bounds, grip)
+			}
+			break
+		}
+	}
+	if !foundPlatformH {
+		t.Fatal("no platform horizontal RoleSplitter node")
+	}
+	ttV.rt.access = true
+	ttV.Frame()
+	foundPlatformV := false
+	for _, n := range ttV.rt.accessTree().Nodes {
+		if n.Role == platform.RoleSplitter {
+			foundPlatformV = true
+			if n.Bounds.H != float64(grip) {
+				t.Fatalf("platform vertical SplitGap(0) splitter Bounds.H = %v, want %v", n.Bounds.H, grip)
+			}
+		}
+	}
+	if !foundPlatformV {
+		t.Fatal("no platform vertical RoleSplitter node")
 	}
 
 	clipPct := float32(50)
